@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>イベントCSVアップロード</title>
+</head>
+<body>
+    <h1>イベントCSVファイルアップロード</h1>
+
+    <form method="post" action="{{ url_for('main.upload_event_csv') }}" enctype="multipart/form-data">
+        <label for="file">CSVファイル (.csv):</label>
+        <input type="file" name="file" accept=".csv" multiple required>
+        <button type="submit">アップロード</button>
+    </form>
+
+    <p><a href="{{ url_for('main.event_search') }}">← イベント検索へ戻る</a></p>
+</body>
+</html>

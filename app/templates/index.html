@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChronoPitch - サッカー試合データ分析</title>
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+</head>
+<body>
+<div class="container mt-4">
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{% if category == 'error' %}danger{% else %}{{ category }}{% endif %} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="row">
+        <div class="col-md-12 text-center mb-4">
+            <h1 class="display-4">⚽ ChronoPitch</h1>
+            <p class="lead">サッカー試合データの高度な分析・可視化システム</p>
+        </div>
+    </div>
+
+    <!-- 主要機能カード -->
+    <div class="row mb-4">
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <h4 class="card-title">🏆 大会・試合選択</h4>
+                    <p class="card-text">大会から特定の試合を選択してGIS分析</p>
+                    <a href="{{ url_for('main.tournament_match_selection') }}" class="btn btn-primary">試合を選択</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <h4 class="card-title">🗺️ インタラクティブGIS</h4>
+                    <p class="card-text">全データの高度な空間分析・可視化</p>
+                    <a href="{{ url_for('main.interactive_gis_map') }}" class="btn btn-success">GIS分析</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CSVアップロード機能 -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>📂 CSVファイルアップロード</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <form method="post" action="{{ url_for('main.upload_event_csv') }}" enctype="multipart/form-data" class="d-flex align-items-center">
+                                <div class="me-3 flex-grow-1">
+                                    <input type="file" name="file" class="form-control" accept=".csv" multiple required>
+                                    <small class="form-text text-muted">
+                                        📋 event.csvファイルを選択してください（複数ファイル同時アップロード対応）
+                                    </small>
+                                </div>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-upload"></i> アップロード
+                                </button>
+                            </form>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="alert alert-info mb-0" style="font-size: 0.9em;">
+                                <strong>📝 CSV形式:</strong><br>
+                                Type, Side1, Unum1, Time1, Mode1, X1, Y1, Side2, Unum2, Time2, X2, Y2, Success のカラムが必要です
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- CSV管理リンク -->
+                    {% if match_data %}
+                    <div class="row mt-3">
+                        <div class="col-md-12">
+                            <div class="alert alert-success d-flex justify-content-between align-items-center">
+                                <span>📊 登録済み: {{ match_data|length }} 件のイベントデータ</span>
+                                <a href="{{ url_for('main.manage_csv') }}" class="btn btn-sm btn-outline-secondary">📋 管理・削除</a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- その他機能 -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>大会管理</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-12">
+                            <a href="/add_tournament" class="btn btn-success btn-lg w-100 mb-2">➕ 新しい大会を追加</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- 登録済み大会 -->
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>📅 登録済みの大会</h5>
+                </div>
+                <div class="card-body">
+                    {% if tournaments %}
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>大会名</th>
+                                        <th>年</th>
+                                        <th>期間</th>
+                                        <th>試合数</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for tournament in tournaments %}
+                                    <tr>
+                                        <td>
+                                            <a href="{{ url_for('main.view_tournament', tournament_id=tournament.id) }}" class="text-decoration-none">
+                                                {{ tournament.name }}
+                                            </a>
+                                        </td>
+                                        <td>{{ tournament.year }}</td>
+                                        <td>
+                                            <small>{{ tournament.start_date.strftime('%m/%d') }} - {{ tournament.end_date.strftime('%m/%d') }}</small>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-secondary">{{ tournament.matches|length }}</span>
+                                        </td>
+                                        <td>
+                                            <a href="{{ url_for('main.view_tournament', tournament_id=tournament.id) }}" 
+                                               class="btn btn-sm btn-outline-primary me-1">詳細</a>
+                                            <form action="{{ url_for('main.delete_tournament', tournament_id=tournament.id) }}" 
+                                                  method="post" style="display:inline;">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                        onclick="return confirm('本当に削除しますか？');">削除</button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info">
+                            <p class="mb-0">まだ大会が登録されていません。<a href="/add_tournament">大会を追加</a>してください。</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+</body>
+</html>

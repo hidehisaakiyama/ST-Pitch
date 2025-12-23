@@ -1,0 +1,2716 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive GIS Soccer Field - ChronoPitch</title>
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/leaflet.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/leaflet.draw.css') }}" />
+    <style>
+        .map-container {
+            height: 800px;
+            border: 2px solid #28a745;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 0 auto;
+            max-width: 1200px;
+        }
+        #map { 
+            height: 100%; 
+            width: 100%;
+            cursor: grab;
+        }
+        #map:active {
+            cursor: grabbing;
+        }
+        .control-panel {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .event-info {
+            position: absolute;
+            top: 160px;  /* さらに下に移動してボタンとの重複を完全に回避 */
+            right: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            max-width: 320px;
+            z-index: 1001;
+            display: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            border: 1px solid #ddd;
+            max-height: 350px;  /* 高さを調整 */
+            overflow-y: auto;   /* スクロール可能にする */
+        }
+        
+        .event-info .btn-close {
+            background-size: 12px;
+            opacity: 0.7;
+            filter: invert(1);
+        }
+        
+        .event-info .btn-close:hover {
+            opacity: 1;
+            transform: scale(1.1);
+        }
+        
+        /* レスポンシブデザイン改善 */
+        @media (max-width: 768px) {
+            .event-info {
+                top: 60px;
+                right: 5px;
+                left: 5px;
+                max-width: none;
+                width: auto;
+            }
+            
+            .clear-search-btn {
+                right: 50px;
+            }
+            
+            .reset-btn {
+                right: 5px;
+            }
+        }
+        .legend {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            position: absolute;
+            bottom: 80px;
+            left: 10px;
+            z-index: 1000;
+        }
+        .team-left { 
+            color: #dc3545 !important; 
+        }
+        .team-right { 
+            color: #007bff !important; 
+        }
+        .team-neutral { 
+            color: #6c757d !important; 
+        }
+        
+        /* ズームコントロールの改善 */
+        .leaflet-control-zoom a {
+            font-size: 18px;
+            line-height: 30px;
+        }
+        .leaflet-control-zoom {
+            border: none;
+            border-radius: 5px;
+        }
+        .reset-btn {
+            position: absolute;
+            top: 10px;
+            right: 50px;
+            z-index: 1000;
+            background: white;
+            border: 2px solid rgba(0,0,0,0.2);
+            border-radius: 4px;
+            width: 35px;
+            height: 35px;
+            cursor: pointer;
+            font-size: 18px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .reset-btn:hover {
+            background: #f0f0f0;
+            transform: scale(1.05);
+        }
+        
+        /* ハイライトされたイベントのスタイル */
+        .highlighted-event {
+            z-index: 1000 !important;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+        
+        /* テーブルのスタイル調整 */
+        .table-responsive {
+            font-size: 0.9rem;
+        }
+        .table th, .table td {
+            padding: 0.6rem 0.4rem;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+        .table th {
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        
+        /* 時間表示の改善 */
+        .time-cell {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: #495057;
+        }
+        
+        .time-input-group {
+            position: relative;
+        }
+        
+        .time-unit {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+            font-size: 0.8rem;
+            pointer-events: none;
+        }
+
+        
+        .spatial-search-info {
+            background: rgba(255, 193, 7, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            position: absolute;
+            top: 55px;
+            left: 10px;
+            z-index: 1002;
+            display: none;
+            font-size: 0.85rem;
+        }
+        .clear-search-btn {
+            position: absolute;
+            top: 10px;
+            right: 95px;
+            z-index: 1000;
+            background: #ffc107;
+            border: 2px solid rgba(0,0,0,0.2);
+            border-radius: 4px;
+            width: 35px;
+            height: 35px;
+            cursor: pointer;
+            font-size: 16px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            display: none;
+        }
+        .clear-search-btn:hover {
+            background: #ffb300;
+            transform: scale(1.05);
+        }
+        
+        /* 図形表示切り替えボタンのスタイル */
+        .shape-toggle-btn {
+            position: absolute;
+            top: 10px;
+            right: 135px;
+            z-index: 1000;
+            background: #28a745;
+            border: 2px solid rgba(0,0,0,0.2);
+            border-radius: 4px;
+            width: 35px;
+            height: 35px;
+            cursor: pointer;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            display: none;
+            color: white;
+        }
+        .shape-toggle-btn:hover {
+            background: #218838;
+            transform: scale(1.05);
+        }
+        .shape-toggle-btn.hidden {
+            background: #dc3545;
+        }
+        .shape-toggle-btn.hidden:hover {
+            background: #c82333;
+        }
+        
+        /* 選択矩形のスタイル */
+        .selection-rectangle {
+            border: 3px dashed #ff6b35;
+            background: rgba(255, 107, 53, 0.2);
+            pointer-events: none;
+        }
+        
+        /* 多角形描画中のスタイル改善 */
+        .leaflet-draw-tooltip {
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid #ff6b35;
+            border-radius: 4px;
+            color: white;
+            font-size: 12px;
+            padding: 4px 8px;
+        }
+        
+        /* 描画中の多角形の頂点スタイル */
+        .leaflet-editing-icon {
+            border-radius: 50%;
+            border: 2px solid #ff6b35;
+            background: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        /* 多角形の線のスタイル改善 */
+        .leaflet-interactive {
+            stroke-dasharray: none !important;
+        }
+        
+        /* 描画ツールバーのスタイル改善 */
+        .leaflet-draw-toolbar a {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+        
+        .leaflet-draw-toolbar a:hover {
+            background-color: #e9ecef;
+            border-color: #adb5bd;
+            transform: scale(1.05);
+        }
+        
+        /* アクティブな描画ツール */
+        .leaflet-draw-toolbar a.leaflet-draw-draw-rectangle.leaflet-enabled,
+        .leaflet-draw-toolbar a.leaflet-draw-draw-circle.leaflet-enabled,
+        .leaflet-draw-toolbar a.leaflet-draw-draw-polygon.leaflet-enabled {
+            background-color: #ff6b35 !important;
+            border-color: #e55a2b !important;
+            color: white !important;
+            box-shadow: 0 2px 8px rgba(255, 107, 53, 0.4);
+        }
+        
+        /* 描画モード中のツールバー全体のスタイル */
+        .leaflet-draw-toolbar.leaflet-bar a.leaflet-enabled {
+            animation: pulse-border 1.5s infinite;
+        }
+        
+        @keyframes pulse-border {
+            0% { box-shadow: 0 2px 8px rgba(255, 107, 53, 0.4); }
+            50% { box-shadow: 0 2px 12px rgba(255, 107, 53, 0.7); }
+            100% { box-shadow: 0 2px 8px rgba(255, 107, 53, 0.4); }
+        }
+        
+        /* 描画完了後の選択状態表示 */
+        .shape-selected-indicator {
+            position: absolute;
+            top: 95px;
+            left: 10px;
+            z-index: 1002;
+            background: rgba(255, 107, 53, 0.9);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            display: none;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        
+        /* 複数図形描画のためのスタイル改善 */
+        .drawn-shape {
+            stroke-width: 3;
+            stroke-opacity: 0.8;
+            fill-opacity: 0.3;
+        }
+        
+        /* 図形に番号ラベルを表示するためのスタイル */
+        .shape-number-label {
+            background: rgba(255, 107, 53, 0.9);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            border: 1px solid white;
+        }
+        
+        .sequence-number-label {
+            background: rgba(255, 193, 7, 0.95);
+            color: #212529;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            border: 2px solid #f0ad4e;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        /* シーケンス抽出モードのスタイル */
+        .sequence-extraction-mode {
+            background-color: #ffc107 !important;
+            border-color: #f0ad4e !important;
+            animation: pulse-extraction 1.5s infinite;
+        }
+        
+        @keyframes pulse-extraction {
+            0% { box-shadow: 0 2px 8px rgba(255, 193, 7, 0.4); }
+            50% { box-shadow: 0 2px 12px rgba(255, 193, 7, 0.8); }
+            100% { box-shadow: 0 2px 8px rgba(255, 193, 7, 0.4); }
+        }
+        
+        .sequence-info-panel {
+            position: absolute;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1003;
+            background: rgba(255, 193, 7, 0.95);
+            color: #212529;
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            display: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            border: 2px solid #f0ad4e;
+        }
+        
+        .sequence-highlight {
+            stroke: #ffc107 !important;
+            stroke-width: 6 !important;
+            stroke-opacity: 0.9 !important;
+            z-index: 999 !important;
+            animation: sequence-glow 2s infinite;
+        }
+        
+        @keyframes sequence-glow {
+            0% { stroke-opacity: 0.7; stroke-width: 6; }
+            50% { stroke-opacity: 1; stroke-width: 8; }
+            100% { stroke-opacity: 0.7; stroke-width: 6; }
+        }
+        
+
+    </style>
+</head>
+<body>
+    <div class="container-fluid mt-3">
+        <h1>🏟️ Interactive Soccer Field GIS Analysis</h1>
+        
+        <!-- デバッグ情報 -->
+        <div id="debugInfo" class="alert alert-info" style="display: none;">
+            <strong>Debug:</strong> <span id="eventCountDebug">Loading...</span>
+        </div>
+        
+        <!-- コントロールパネル -->
+        <div class="control-panel">
+            <form method="GET" id="filterForm">
+                <div class="row">
+                    <div class="col-md-2">
+                        <label for="event_type" class="form-label">Event Type</label>
+                        <select class="form-select" id="event_type" name="event_type">
+                            <option value="">All</option>
+                            {% for etype in event_types %}
+                                <option value="{{ etype }}" {% if etype == selected_type %}selected{% endif %}>{{ etype }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label for="team" class="form-label">Team</label>
+                        <select class="form-select" id="team" name="team">
+                            <option value="">All</option>
+                            {% for team in teams %}
+                                <option value="{{ team }}" {% if team == selected_team %}selected{% endif %}>{{ team }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label for="unum" class="form-label">Player #</label>
+                        <select class="form-select" id="unum" name="unum">
+                            <option value="">All</option>
+                            {% for unum in unums %}
+                                <option value="{{ unum }}" {% if unum|string == selected_unum %}selected{% endif %}>{{ unum }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label for="match_id" class="form-label">Match</label>
+                        <select class="form-select" id="match_id" name="match_id">
+                            <option value="">All</option>
+                            {% for match in match_ids %}
+                                <option value="{{ match }}" {% if match == selected_match %}selected{% endif %}>{{ match }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label for="success" class="form-label">Success</label>
+                        <select class="form-select" id="success" name="success">
+                            <option value="">All</option>
+                            <option value="true" {% if selected_success == 'true' %}selected{% endif %}>Success</option>
+                            <option value="false" {% if selected_success == 'false' %}selected{% endif %}>Failed</option>
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary me-2">🔍 Search</button>
+                        <button type="button" class="btn btn-secondary me-2" onclick="clearFilters()">Clear</button>
+                        <button type="button" class="btn btn-warning" id="sequenceExtractionBtn" onclick="toggleSequenceExtractionMode()">🔗 Extract Sequence</button>
+                    </div>
+                    
+                    <div class="col-md-12 mt-2">
+                        <button type="button" class="btn btn-success me-2" id="applySequenceFilterBtn" onclick="applySequenceFilter()" style="display: none;">📊 Filter by Sequence</button>
+                        <button type="button" class="btn btn-outline-secondary" id="clearSequenceFilterBtn" onclick="clearSequenceFilter()" style="display: none;">❌ Clear Sequence Filter</button>
+                    </div>
+                </div>
+                
+                <!-- 時間検索行 -->
+                <div class="row mt-2">
+                    <div class="col-md-2">
+                        <label for="min_time" class="form-label">Min Time</label>
+                        <div class="time-input-group">
+                            <input type="number" class="form-control" id="min_time" name="min_time" 
+                                   step="0.1" min="0" placeholder="0.0"
+                                   value="{{ selected_min_time }}">
+                            <span class="time-unit">sec</span>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label for="max_time" class="form-label">Max Time</label>
+                        <div class="time-input-group">
+                            <input type="number" class="form-control" id="max_time" name="max_time" 
+                                   step="0.1" min="0" placeholder="6000.0"
+                                   value="{{ selected_max_time }}">
+                            <span class="time-unit">sec</span>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-3">
+                        <label for="time_preset" class="form-label">⏱️ Time Presets</label>
+                        <select class="form-select" id="time_preset" onchange="applyTimePreset()">
+                            <option value="">Custom</option>
+                            <option value="full_game">Full Game (0-6000s)</option>
+                            <option value="first_half">First Half (0-3000s)</option>
+                            <option value="second_half">Second Half (3000-6000s)</option>
+                            <option value="first_15min">First 15min (0-900s)</option>
+                            <option value="last_15min">Last 15min (5100-6000s)</option>
+                            <option value="middle_game">Middle Game (1500-4500s)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label for="limit" class="form-label">Display Limit</label>
+                        <select class="form-select" id="limit" name="limit">
+                            <option value="100" {% if request.args.get('limit', '1000') == '100' %}selected{% endif %}>100 events</option>
+                            <option value="300" {% if request.args.get('limit', '1000') == '300' %}selected{% endif %}>300 events</option>
+                            <option value="500" {% if request.args.get('limit', '1000') == '500' %}selected{% endif %}>500 events</option>
+                            <option value="1000" {% if request.args.get('limit', '1000') == '1000' %}selected{% endif %}>1000 events (default)</option>
+                            <option value="2000" {% if request.args.get('limit', '1000') == '2000' %}selected{% endif %}>2000 events</option>
+                            <option value="3000" {% if request.args.get('limit', '1000') == '3000' %}selected{% endif %}>3000 events</option>
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-4">
+                    </div>
+                </div>
+
+                <!-- XY座標検索行 -->
+                <div class="row mt-2" id="coordinateSearchRow">
+                    <div class="col-md-2">
+                        <label for="rect_xmin" class="form-label">X Min (西)</label>
+                        <input type="number" class="form-control" id="rect_xmin" name="rect_xmin" 
+                               step="0.1" min="-52.5" max="52.5" placeholder="-52.5"
+                               value="{{ request.args.get('rect_xmin', '') }}">
+                        <div class="form-text">西端 (-52.5)</div>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label for="rect_xmax" class="form-label">X Max (東)</label>
+                        <input type="number" class="form-control" id="rect_xmax" name="rect_xmax" 
+                               step="0.1" min="-52.5" max="52.5" placeholder="52.5"
+                               value="{{ request.args.get('rect_xmax', '') }}">
+                        <div class="form-text">東端 (52.5)</div>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label for="rect_ymin" class="form-label">Y Min (南)</label>
+                        <input type="number" class="form-control" id="rect_ymin" name="rect_ymin" 
+                               step="0.1" min="-34" max="34" placeholder="-34"
+                               value="{{ request.args.get('rect_ymin', '') }}">
+                        <div class="form-text">南端 (-34)</div>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label for="rect_ymax" class="form-label">Y Max (北)</label>
+                        <input type="number" class="form-control" id="rect_ymax" name="rect_ymax" 
+                               step="0.1" min="-34" max="34" placeholder="34"
+                               value="{{ request.args.get('rect_ymax', '') }}">
+                        <div class="form-text">北端 (34)</div>
+                    </div>
+                    
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button type="button" class="btn btn-info me-2" onclick="applyCoordinateSearch()">📐 座標検索</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="clearCoordinateInputs()">🗑️ クリア</button>
+                    </div>
+                    
+                    <div class="col-md-2">
+                        <label for="coordinate_preset" class="form-label">📐 座標プリセット</label>
+                        <select class="form-select" id="coordinate_preset" onchange="applyCoordinatePreset()">
+                            <option value="">カスタム座標</option>
+                            <option value="full_field">フィールド全体</option>
+                            <option value="left_half">左ハーフ</option>
+                            <option value="right_half">右ハーフ</option>
+                            <option value="center_circle">センターサークル</option>
+                            <option value="left_penalty">左ペナルティエリア</option>
+                            <option value="right_penalty">右ペナルティエリア</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- 空間検索用の隠しフィールド -->
+                <input type="hidden" id="shape_type" name="shape_type" value="">
+                <input type="hidden" id="shape_data" name="shape_data" value="">
+                <!-- シーケンス絞り込み用の隠しフィールド -->
+                <input type="hidden" id="sequence_ids" name="sequence_ids" value="{{ sequence_ids }}">
+                </div>
+            </form>
+        </div>
+        
+        <!-- 統計情報 -->
+        <div class="row mb-3">
+            <div class="col-md-12">
+                <div class="alert alert-info" id="statsInfo">
+                    <strong>📊 Results:</strong> 
+                    <span id="eventCount">Showing {{ total_events if total_events else 0 }} events (limit: {{ request.args.get('limit', 1000) }})</span>
+                    {% if selected_match %} from match {{ selected_match }}{% endif %}
+                    {% if selected_team %} by team {{ selected_team }}{% endif %}
+                    {% if selected_min_time or selected_max_time %}
+                        | ⏱️ <strong>Time range:</strong> 
+                        {% if selected_min_time %}{{ selected_min_time }}s{% else %}0s{% endif %} 
+                        ~ 
+                        {% if selected_max_time %}{{ selected_max_time }}s{% else %}∞{% endif %}
+                    {% endif %}
+                    {% if is_sequence_filtered %}
+                        | 🔗 <strong>Sequence filtered</strong>
+                    {% endif %}
+                    <span id="spatialFilterNote" style="display: none;"> | 🎯 <strong>Spatial filter active</strong></span>
+                    <span id="multiSpatialNote" style="display: none;"> | 🔄 <strong>Multiple areas (OR search)</strong></span>
+                    <span id="shapeInfoNote" style="display: none;"> | 📐 <span id="shapeInfoText"></span></span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- マップコンテナ -->
+        <div class="map-container">
+            <div id="map"></div>
+            
+            <!-- リセットボタン -->
+            <button class="reset-btn" id="resetBtn" title="Reset view to fit field">🏠</button>
+            
+
+            
+            <!-- 図形表示切り替えボタン -->
+            <button class="shape-toggle-btn" id="shapeToggleBtn" title="Toggle shape visibility (👁️ = visible, 👁️‍🗨️ = hidden)">👁️</button>
+            
+            <!-- 範囲検索クリアボタン -->
+            <button class="clear-search-btn" id="clearSearchBtn" title="Clear spatial search (keep other filters)">🗑️</button>
+            
+            <!-- 範囲検索情報 -->
+            <div class="spatial-search-info" id="spatialSearchInfo" style="display: none;">
+                <strong>🎯 Spatial Search</strong>
+            </div>
+            
+            <!-- 図形選択状態表示 -->
+            <div class="shape-selected-indicator" id="shapeSelectedIndicator">
+                <span id="shapeSelectedText">📐 Rectangle Selected</span>
+            </div>
+            
+            <!-- シーケンス抽出モード情報 -->
+            <div class="sequence-info-panel" id="sequenceInfoPanel">
+                🔗 Click any event to extract full attack sequence
+            </div>
+            
+            <!-- イベント情報パネル -->
+            <div class="event-info" id="eventInfo">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">Event Details</h6>
+                    <button type="button" class="btn-close btn-close-white" aria-label="Close" onclick="closeEventDetails()"></button>
+                </div>
+                <div id="eventDetails"></div>
+            </div>
+            
+            <!-- 凡例 -->
+            <div class="legend">
+                <h6>Legend</h6>
+                <div><span class="team-left">●</span> Left Team</div>
+                <div><span class="team-right">●</span> Right Team</div>
+                <div><span class="team-neutral">●</span> Neutral/Other</div>
+                <hr style="margin: 8px 0;">
+                <small>📍 Draw shapes (rectangles/circles/polygons)<br>
+                🔍 <strong>Click 🔍 Search button to apply filters</strong><br>
+                🎯 Multiple shapes = OR search<br>
+                🗑️ Use clear button to remove shapes</small>
+            </div>
+        </div>
+        
+        <!-- 詳細検索結果 -->
+        {% if events %}
+        <div class="mt-4">
+            <div class="alert alert-info d-flex justify-content-between align-items-center mb-3">
+                <span><strong>⏱️ 検索処理時間: {{ processing_time }}秒</strong></span>
+            </div>
+            <h4>📋 Event List</h4>
+            <div class="table-responsive">
+                <table class="table table-sm table-striped">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Time1</th>
+                            <th>Time2</th>
+                            <th>Type</th>
+                            <th>Mode</th>
+                            <th>Side1</th>
+                            <th>Player1</th>
+                            <th>Side2</th>
+                            <th>Player2</th>
+                            <th>Start Position</th>
+                            <th>End Position</th>
+                            <th>Success</th>
+                            <th>Match</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for event in list_events %}
+                        <tr class="event-row" data-event-id="{{ event.id }}">
+                            <td class="time-cell">{{ "{:g}".format(event.time1) }}</td>
+                            <td class="time-cell">
+                                {% if event.time2 is not none %}
+                                    {{ "{:g}".format(event.time2) }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td><span class="badge bg-secondary">{{ event.type }}</span></td>
+                            <td><span class="badge bg-light text-dark">{{ event.mode1 or '-' }}</span></td>
+                            <td class="{% if event.side1 == 'left' %}team-left{% elif event.side1 == 'right' %}team-right{% else %}team-neutral{% endif %}">
+                                {{ event.side1 or '-' }}
+                            </td>
+                            <td class="{% if event.side1 == 'left' %}team-left{% elif event.side1 == 'right' %}team-right{% else %}team-neutral{% endif %}">
+                                {{ event.unum1 or '-' }}
+                            </td>
+                            <td class="{% if event.side2 == 'left' %}team-left{% elif event.side2 == 'right' %}team-right{% elif event.side2 == 'neutral' %}team-neutral{% else %}team-neutral{% endif %}">
+                                {{ event.side2 or '-' }}
+                            </td>
+                            <td class="{% if event.side2 == 'left' %}team-left{% elif event.side2 == 'right' %}team-right{% elif event.side2 == 'neutral' %}team-neutral{% else %}team-neutral{% endif %}">
+                                {{ event.unum2 or '-' }}
+                            </td>
+                            <td>({{ "{:g}".format(event.x1) }}, {{ "{:g}".format(event.y1) }})</td>
+                            <td>
+                                {% if event.x2 is not none and event.y2 is not none %}
+                                    ({{ "{:g}".format(event.x2) }}, {{ "{:g}".format(event.y2) }})
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if event.success is not none %}
+                                    <span class="badge bg-{{ 'success' if event.success else 'danger' }}">
+                                        {{ 'Yes' if event.success else 'No' }}
+                                    </span>
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>{{ event.match_id }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- ページネーション -->
+            {% if total_pages > 1 %}
+            <nav aria-label="Event list pagination" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    <!-- 最初のページ -->
+                    {% if current_page > 1 %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page=1{% for key, value in request.args.items() %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                                <span aria-hidden="true">&laquo;&laquo;</span> First
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ current_page - 1 }}{% for key, value in request.args.items() %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                                <span aria-hidden="true">&laquo;</span> Previous
+                            </a>
+                        </li>
+                    {% endif %}
+
+                    <!-- ページ番号 -->
+                    {% set start_page = [1, current_page - 2]|max %}
+                    {% set end_page = [total_pages, current_page + 2]|min %}
+                    
+                    {% for page_num in range(start_page, end_page + 1) %}
+                        {% if page_num == current_page %}
+                            <li class="page-item active" aria-current="page">
+                                <span class="page-link">{{ page_num }}</span>
+                            </li>
+                        {% else %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_num }}{% for key, value in request.args.items() %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">{{ page_num }}</a>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+
+                    <!-- 次のページ -->
+                    {% if current_page < total_pages %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ current_page + 1 }}{% for key, value in request.args.items() %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                                Next <span aria-hidden="true">&raquo;</span>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ total_pages }}{% for key, value in request.args.items() %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                                Last <span aria-hidden="true">&raquo;&raquo;</span>
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        <div class="mt-4 text-center">
+            <a href="{{ url_for('main.index') }}" class="btn btn-outline-primary">🏠 Back to Home</a>
+            <a href="{{ url_for('main.event_search') }}" class="btn btn-outline-secondary">📊 Standard Search</a>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/leaflet.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/leaflet.draw.js') }}"></script>
+    
+    <script>
+        // サッカーフィールドの設定
+        const FIELD_WIDTH = 105;  // meters
+        const FIELD_HEIGHT = 68;  // meters
+        
+        // マップ初期化（操作性を向上）
+        const map = L.map('map', {
+            crs: L.CRS.Simple,
+            minZoom: -2,
+            maxZoom: 4,
+            zoomDelta: 0.25,
+            zoomSnap: 0.25,
+            wheelPxPerZoomLevel: 60,
+            doubleClickZoom: true,
+            scrollWheelZoom: true,
+            boxZoom: true,
+            keyboard: true,
+            dragging: true,
+            touchZoom: true,
+            zoomControl: true,
+            inertia: true,
+            inertiaDeceleration: 3000,
+            maxBoundsViscosity: 0.3
+        });
+        
+        // サッカーフィールドの境界
+        const bounds = [[0, 0], [FIELD_HEIGHT, FIELD_WIDTH]];
+        const extendedBounds = [[-30, -30], [FIELD_HEIGHT + 30, FIELD_WIDTH + 30]];
+        
+        map.fitBounds(bounds, {padding: [20, 20]});
+        map.setMaxBounds(extendedBounds);
+        
+        // フィールド背景を描画
+        function drawSoccerField() {
+            // フィールド全体
+            L.rectangle(bounds, {
+                color: 'white',
+                weight: 4,
+                fillColor: '#228B22',
+                fillOpacity: 0.4
+            }).addTo(map);
+            
+            // センターライン
+            L.polyline([[0, FIELD_WIDTH/2], [FIELD_HEIGHT, FIELD_WIDTH/2]], {
+                color: 'white',
+                weight: 3
+            }).addTo(map);
+            
+            // センターサークル
+            L.circle([FIELD_HEIGHT/2, FIELD_WIDTH/2], {
+                radius: 9.15,
+                color: 'white',
+                weight: 3,
+                fill: false
+            }).addTo(map);
+            
+            // ゴールエリア（左）
+            L.rectangle([[FIELD_HEIGHT/2 - 9.16, 0], [FIELD_HEIGHT/2 + 9.16, 5.5]], {
+                color: 'white',
+                weight: 3,
+                fill: false
+            }).addTo(map);
+            
+            // ゴールエリア（右）
+            L.rectangle([[FIELD_HEIGHT/2 - 9.16, FIELD_WIDTH - 5.5], [FIELD_HEIGHT/2 + 9.16, FIELD_WIDTH]], {
+                color: 'white',
+                weight: 3,
+                fill: false
+            }).addTo(map);
+            
+            // ペナルティエリア（左）
+            L.rectangle([[FIELD_HEIGHT/2 - 20.16, 0], [FIELD_HEIGHT/2 + 20.16, 16.5]], {
+                color: 'white',
+                weight: 3,
+                fill: false
+            }).addTo(map);
+            
+            // ペナルティエリア（右）
+            L.rectangle([[FIELD_HEIGHT/2 - 20.16, FIELD_WIDTH - 16.5], [FIELD_HEIGHT/2 + 20.16, FIELD_WIDTH]], {
+                color: 'white',
+                weight: 3,
+                fill: false
+            }).addTo(map);
+        }
+        
+        // フィールドを描画
+        drawSoccerField();
+        
+        // イベントデータをJavaScriptに渡す
+        const originalEvents = [
+        {% if events %}
+            {% for event in events %}
+            {
+                id: {{ event.id }},
+                match_id: "{{ event.match_id }}",
+                time1: {{ event.time1 if event.time1 is not none else 'null' }},
+                time2: {{ event.time2 if event.time2 is not none else 'null' }},
+                type: "{{ event.type }}",
+                side1: "{{ event.side1 }}",
+                side2: "{{ event.side2 if event.side2 else '' }}",
+                unum1: {{ event.unum1 if event.unum1 is not none else 'null' }},
+                unum2: {{ event.unum2 if event.unum2 is not none else 'null' }},
+                x1: {{ event.x1 if event.x1 is not none else 'null' }},
+                y1: {{ event.y1 if event.y1 is not none else 'null' }},
+                x2: {{ event.x2 if event.x2 is not none else 'null' }},
+                y2: {{ event.y2 if event.y2 is not none else 'null' }},
+                mode1: "{{ event.mode1 if event.mode1 else '' }}",
+                success: {{ 'true' if event.success else 'false' }}
+            }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        {% endif %}
+        ];
+        
+        console.log(`Loaded ${originalEvents.length} events for GIS display`);
+        
+        // デバッグ情報をページに表示
+        const debugInfo = document.getElementById('debugInfo');
+        const eventCountDebug = document.getElementById('eventCountDebug');
+        
+        if (originalEvents.length === 0) {
+            console.warn('⚠️ No events loaded! Check if data is being passed from backend');
+            eventCountDebug.textContent = '⚠️ No events loaded from backend!';
+            debugInfo.style.display = 'block';
+            debugInfo.className = 'alert alert-warning';
+        } else {
+            console.log('✅ Sample event:', originalEvents[0]);
+            eventCountDebug.textContent = `✅ Loaded ${originalEvents.length} events successfully`;
+            debugInfo.style.display = 'block';
+            debugInfo.className = 'alert alert-success';
+        }
+
+        // 範囲検索用の変数を初期化  
+        let drawnItems = new L.FeatureGroup();
+        let filteredEvents = [...originalEvents];  // 初期状態では全てのイベントを表示
+        let spatialSearchActive = false;
+        let shapesVisible = true;  // 図形の表示状態を管理
+        
+        // イベント表示用レイヤーとその他の変数を初期化
+        window.eventLayer = L.layerGroup().addTo(map);
+        window.highlightedEventLayer = null;
+        window.highlightedSequenceLayer = null;
+        window.sequenceExtractionMode = false;
+        window.currentSequenceIds = null;
+        
+        // 描画ツールの初期化
+        map.addLayer(drawnItems);
+        
+        const drawControl = new L.Control.Draw({
+            position: 'topleft',
+            draw: {
+                polygon: {
+                    allowIntersection: false,
+                    drawError: {
+                        color: '#e1e100',
+                        message: '<strong>Error:</strong> Shape edges cannot cross!'
+                    },
+                    shapeOptions: {
+                        color: '#ff6b35',
+                        weight: 3,
+                        opacity: 0.9,
+                        fillColor: '#ff6b35',
+                        fillOpacity: 0.2,
+                        dashArray: '5, 5'
+                    }
+                },
+                rectangle: {
+                    shapeOptions: {
+                        color: '#ff6b35',
+                        weight: 3,
+                        opacity: 0.8,
+                        fillOpacity: 0.3
+                    }
+                },
+                circle: {
+                    shapeOptions: {
+                        color: '#ff6b35',
+                        weight: 3,
+                        opacity: 0.8,
+                        fillOpacity: 0.3
+                    }
+                },
+                marker: false,
+                circlemarker: false,
+                polyline: false
+            },
+            edit: {
+                featureGroup: drawnItems,
+                remove: true
+            }
+        });
+        
+        map.addControl(drawControl);
+        
+        // 描画イベントハンドラー
+        map.on(L.Draw.Event.CREATED, function (e) {
+            const layer = e.layer;
+            drawnItems.addLayer(layer);
+            
+            // 図形作成のログ
+            if (layer instanceof L.Circle) {
+                const center = layer.getLatLng();
+                const radius = layer.getRadius();
+                console.log(`🔵 Circle created: center=(${center.lat.toFixed(2)},${center.lng.toFixed(2)}), radius=${radius.toFixed(2)}`);
+                
+                // テスト用：フィールドの角にある仮想点での距離確認
+                const testPoint = L.latLng(0, 0); // フィールド左下角
+                const dx = center.lng - testPoint.lng;
+                const dy = center.lat - testPoint.lat;  
+                const testDistance = Math.sqrt(dx * dx + dy * dy);
+                console.log(`🔵 Test distance to (0,0): ${testDistance.toFixed(2)}, inside=${testDistance <= radius}`);
+                
+            } else if (layer instanceof L.Rectangle) {
+                console.log(`⬛ Rectangle created: bounds=${JSON.stringify(layer.getBounds())}`);
+            } else if (layer instanceof L.Polygon) {
+                const latlngs = layer.getLatLngs()[0];
+                console.log(`📐 Polygon created: ${latlngs.length} points`);
+                console.log(`   Leaflet vertices: ${latlngs.map(ll => `(lat:${ll.lat.toFixed(1)},lng:${ll.lng.toFixed(1)})`).join(' -> ')}`);
+                console.log(`   RoboCup vertices: ${latlngs.map(ll => `(x:${(ll.lng - 52.5).toFixed(1)},y:${(ll.lat - 34).toFixed(1)})`).join(' -> ')}`);
+                
+                // 境界ボックス情報
+                const minLat = Math.min(...latlngs.map(ll => ll.lat));
+                const maxLat = Math.max(...latlngs.map(ll => ll.lat));
+                const minLng = Math.min(...latlngs.map(ll => ll.lng));
+                const maxLng = Math.max(...latlngs.map(ll => ll.lng));
+                console.log(`   Bounding box: lat(${minLat.toFixed(1)}-${maxLat.toFixed(1)}), lng(${minLng.toFixed(1)}-${maxLng.toFixed(1)})`);
+                console.log(`   RoboCup bbox: x(${(minLng-52.5).toFixed(1)}-${(maxLng-52.5).toFixed(1)}), y(${(minLat-34).toFixed(1)}-${(maxLat-34).toFixed(1)})`);
+            }
+            
+            // 図形に番号ラベルを追加
+            addShapeNumberLabel(layer);
+            
+            // 図形データをフォームの隠しフィールドに設定
+            setShapeDataToForm();
+            
+            showSpatialSearchControls();  // 検索ボタンを表示
+            updateMultipleShapeIndicator();  // 複数図形状態表示を更新
+            
+            console.log(`📐 Shape created, click 🔍 Search to apply spatial filter`);
+        });
+        
+        map.on(L.Draw.Event.EDITED, function (e) {
+            // 図形データをフォームの隠しフィールドに更新
+            setShapeDataToForm();
+            
+            showSpatialSearchControls();  // 検索ボタンを表示
+            updateMultipleShapeIndicator();  // 複数図形状態表示を更新
+            
+            console.log(`📝 Shape edited, click 🔍 Search to apply spatial filter`);
+        });
+        
+        map.on(L.Draw.Event.DELETED, function (e) {
+            // 番号ラベルを再計算
+            updateShapeNumbers();
+            
+            // 図形データをフォームの隠しフィールドに更新
+            setShapeDataToForm();
+            
+            if (drawnItems.getLayers().length === 0) {
+                hideSpatialSearchControls();  // 検索ボタンを非表示
+                hideShapeSelectedIndicator();  // 選択状態表示を非表示
+                updateSpatialSearchInfo();
+            } else {
+                showSpatialSearchControls();  // 検索ボタンを表示
+                updateMultipleShapeIndicator();  // 複数図形状態表示を更新
+                
+                console.log(`🗑️ Shape deleted, click 🔍 Search to apply spatial filter`);
+            }
+        });
+        
+        // 描画開始イベント（ツール選択時）
+        map.on(L.Draw.Event.DRAWSTART, function (e) {
+            const type = e.layerType;
+            highlightDrawingTool(type);
+        });
+        
+        // 描画停止イベント（ツール選択解除時）
+        map.on(L.Draw.Event.DRAWSTOP, function (e) {
+            removeDrawingToolHighlight();
+        });
+        
+
+        
+        // リセットボタン機能
+        document.getElementById('resetBtn').onclick = function() {
+            map.fitBounds(bounds, {padding: [20, 20]});
+        };
+        
+        // 範囲検索クリアボタン機能
+        document.getElementById('clearSearchBtn').onclick = function() {
+            clearSpatialSearch();
+        };
+        
+        // 注意: isPointInPolygon関数は下の方で定義されています
+        
+        // 描画ツールのハイライト機能
+        function highlightDrawingTool(toolType) {
+            // 全てのツールのハイライトを一旦削除
+            removeDrawingToolHighlight();
+            
+            // 対応するツールボタンをハイライト
+            let selector = '';
+            switch(toolType) {
+                case 'rectangle':
+                    selector = '.leaflet-draw-draw-rectangle';
+                    break;
+                case 'circle':
+                    selector = '.leaflet-draw-draw-circle';
+                    break;
+                case 'polygon':
+                    selector = '.leaflet-draw-draw-polygon';
+                    break;
+            }
+            
+            if (selector) {
+                const tool = document.querySelector(selector);
+                if (tool) {
+                    tool.classList.add('leaflet-enabled');
+                }
+            }
+        }
+        
+        function removeDrawingToolHighlight() {
+            // 全てのツールからハイライトを削除
+            document.querySelectorAll('.leaflet-draw-toolbar a').forEach(tool => {
+                tool.classList.remove('leaflet-enabled');
+            });
+        }
+        
+        // 選択状態表示の更新
+        function updateShapeSelectedIndicator(layer) {
+            const indicator = document.getElementById('shapeSelectedIndicator');
+            const textElement = document.getElementById('shapeSelectedText');
+            
+            if (!layer) {
+                hideShapeSelectedIndicator();
+                return;
+            }
+            
+            let shapeType = '';
+            let icon = '';
+            
+            if (layer instanceof L.Rectangle) {
+                shapeType = 'Rectangle';
+                icon = '⬛';
+            } else if (layer instanceof L.Circle) {
+                shapeType = 'Circle';
+                icon = '⭕';
+            } else if (layer instanceof L.Polygon) {
+                shapeType = 'Polygon';
+                icon = '📐';
+            }
+            
+            if (shapeType) {
+                textElement.textContent = `${icon} ${shapeType} Selected - Click 🔍 Search to apply`;
+                indicator.style.display = 'block';
+            }
+        }
+        
+        function hideShapeSelectedIndicator() {
+            document.getElementById('shapeSelectedIndicator').style.display = 'none';
+        }
+        
+        // 図形に番号ラベルを追加
+        function addShapeNumberLabel(layer) {
+            const shapes = drawnItems.getLayers().filter(l => !l._parentShape); // ラベル以外の図形のみカウント
+            const shapeNumber = shapes.length;
+            let labelPosition;
+            
+            if (layer instanceof L.Circle) {
+                labelPosition = layer.getLatLng();
+            } else if (layer instanceof L.Rectangle) {
+                const bounds = layer.getBounds();
+                labelPosition = bounds.getCenter();
+            } else if (layer instanceof L.Polygon) {
+                const latlngs = layer.getLatLngs()[0];
+                const center = latlngs.reduce((acc, latlng, i) => {
+                    acc.lat += latlng.lat;
+                    acc.lng += latlng.lng;
+                    return acc;
+                }, {lat: 0, lng: 0});
+                labelPosition = L.latLng(center.lat / latlngs.length, center.lng / latlngs.length);
+            }
+            
+            if (labelPosition) {
+                const numberLabel = L.marker(labelPosition, {
+                    icon: L.divIcon({
+                        className: 'shape-number-label',
+                        html: shapeNumber.toString(),
+                        iconSize: [20, 20],
+                        iconAnchor: [10, 10]
+                    })
+                });
+                
+                // ラベルをマークして区別できるようにする
+                numberLabel._isShapeLabel = true;
+                numberLabel._parentShape = layer;
+                
+                // ラベルも同じレイヤーグループに追加
+                drawnItems.addLayer(numberLabel);
+                
+                // 図形とラベルを関連付け
+                layer._shapeLabel = numberLabel;
+            }
+        }
+        
+        // 全図形の番号を更新
+        function updateShapeNumbers() {
+            const layers = drawnItems.getLayers();
+            const shapes = layers.filter(l => !l._parentShape); // ラベル以外の図形のみ
+            
+            shapes.forEach((shape, index) => {
+                if (shape._shapeLabel) {
+                    const newNumber = index + 1;
+                    shape._shapeLabel.setIcon(L.divIcon({
+                        className: 'shape-number-label',
+                        html: newNumber.toString(),
+                        iconSize: [20, 20],
+                        iconAnchor: [10, 10]
+                    }));
+                }
+            });
+        }
+        
+        // 複数図形選択状態の表示更新
+        function updateMultipleShapeIndicator() {
+            const layers = drawnItems.getLayers();
+            const shapes = layers.filter(l => !l._parentShape); // ラベル以外の図形のみ
+            const indicator = document.getElementById('shapeSelectedIndicator');
+            const textElement = document.getElementById('shapeSelectedText');
+            
+            if (shapes.length === 0) {
+                hideShapeSelectedIndicator();
+                updateSpatialStatsDisplay(0);
+                return;
+            }
+            
+            if (shapes.length === 1) {
+                updateShapeSelectedIndicator(shapes[0]);
+                updateSpatialStatsDisplay(1);
+                return;
+            }
+            
+            // 複数の図形がある場合
+            const shapeTypes = {};
+            shapes.forEach(layer => {
+                if (layer instanceof L.Rectangle) {
+                    shapeTypes['Rectangle'] = (shapeTypes['Rectangle'] || 0) + 1;
+                } else if (layer instanceof L.Circle) {
+                    shapeTypes['Circle'] = (shapeTypes['Circle'] || 0) + 1;
+                } else if (layer instanceof L.Polygon) {
+                    shapeTypes['Polygon'] = (shapeTypes['Polygon'] || 0) + 1;
+                }
+            });
+            
+            const typeTexts = [];
+            if (shapeTypes['Rectangle']) typeTexts.push(`⬛${shapeTypes['Rectangle']}`);
+            if (shapeTypes['Circle']) typeTexts.push(`⭕${shapeTypes['Circle']}`);
+            if (shapeTypes['Polygon']) typeTexts.push(`📐${shapeTypes['Polygon']}`);
+            
+            textElement.textContent = `🔍 ${typeTexts.join(' + ')} Selected - Click 🔍 Search to apply`;
+            indicator.style.display = 'block';
+            
+            // 統計表示も更新
+            updateSpatialStatsDisplay(shapes.length);
+        }
+        
+        // 空間検索統計の表示更新
+        function updateSpatialStatsDisplay(shapeCount) {
+            const spatialNote = document.getElementById('spatialFilterNote');
+            const multiSpatialNote = document.getElementById('multiSpatialNote');
+            const shapeInfoNote = document.getElementById('shapeInfoNote');
+            const shapeInfoText = document.getElementById('shapeInfoText');
+            
+            if (shapeCount > 1) {
+                spatialNote.style.display = 'inline';
+                multiSpatialNote.style.display = 'inline';
+                shapeInfoNote.style.display = 'inline';
+                
+                // 図形の詳細情報を表示
+                const shapes = drawnItems.getLayers().filter(l => !l._parentShape);
+                const shapeTypes = {};
+                shapes.forEach(layer => {
+                    if (layer instanceof L.Rectangle) {
+                        shapeTypes['Rectangle'] = (shapeTypes['Rectangle'] || 0) + 1;
+                    } else if (layer instanceof L.Circle) {
+                        shapeTypes['Circle'] = (shapeTypes['Circle'] || 0) + 1;
+                    } else if (layer instanceof L.Polygon) {
+                        shapeTypes['Polygon'] = (shapeTypes['Polygon'] || 0) + 1;
+                    }
+                });
+                
+                const typeTexts = [];
+                if (shapeTypes['Rectangle']) typeTexts.push(`Rectangle×${shapeTypes['Rectangle']}`);
+                if (shapeTypes['Circle']) typeTexts.push(`Circle×${shapeTypes['Circle']}`);
+                if (shapeTypes['Polygon']) typeTexts.push(`Polygon×${shapeTypes['Polygon']}`);
+                
+                shapeInfoText.textContent = typeTexts.join(' + ');
+                
+            } else if (shapeCount === 1) {
+                spatialNote.style.display = 'inline';
+                multiSpatialNote.style.display = 'none';
+                shapeInfoNote.style.display = 'inline';
+                
+                // 単一図形の情報を表示
+                const shapes = drawnItems.getLayers().filter(l => !l._parentShape);
+                if (shapes.length > 0) {
+                    const shape = shapes[0];
+                    let shapeInfo = '';
+                    if (shape instanceof L.Rectangle) {
+                        shapeInfo = 'Rectangle area';
+                    } else if (shape instanceof L.Circle) {
+                        shapeInfo = `Circle (r=${shape.getRadius().toFixed(1)})`;
+                    } else if (shape instanceof L.Polygon) {
+                        shapeInfo = 'Polygon area';
+                    }
+                    shapeInfoText.textContent = shapeInfo;
+                }
+                
+            } else {
+                spatialNote.style.display = 'none';
+                multiSpatialNote.style.display = 'none';
+                shapeInfoNote.style.display = 'none';
+            }
+        }
+
+        
+        // 範囲検索のクリア
+        function clearSpatialSearch() {
+            // 図形をクリア
+            drawnItems.clearLayers();
+            shapesVisible = true;  // 図形表示状態をリセット
+            
+            // UIをリセット
+            hideSpatialSearchControls();
+            hideShapeSelectedIndicator();  // 選択状態表示を非表示
+            removeDrawingToolHighlight();  // ツールハイライトを削除
+            
+            // 隠しフィールドをクリア
+            document.getElementById('shape_type').value = '';
+            document.getElementById('shape_data').value = '';
+            
+            // 他の条件は維持したまま、空間フィルタのみをクリアして再検索
+            document.getElementById('filterForm').submit();
+        }
+        
+        // 空間フィルター実行（Searchボタンを押したときのみ実行される）
+        function performSpatialFilter() {
+            const allLayers = drawnItems.getLayers();
+            const shapes = allLayers.filter(s => !s._parentShape && !s._isShapeLabel);
+            console.log(`🎯 performSpatialFilter called with ${shapes.length} shapes (${allLayers.length} total layers including labels)`);
+            
+            // 各図形のタイプをログ出力
+            shapes.forEach((shape, index) => {
+                if (shape instanceof L.Circle) {
+                    console.log(`  Shape ${index}: Circle at (${shape.getLatLng().lat.toFixed(2)}, ${shape.getLatLng().lng.toFixed(2)}) radius=${shape.getRadius().toFixed(2)}`);
+                } else if (shape instanceof L.Rectangle) {
+                    console.log(`  Shape ${index}: Rectangle`);
+                } else if (shape instanceof L.Polygon) {
+                    console.log(`  Shape ${index}: Polygon`);
+                } else {
+                    console.log(`  Shape ${index}: Unknown type`, shape.constructor.name);
+                }
+            });
+            
+            if (shapes.length === 0) {
+                // 図形がない場合は全イベントを表示
+                spatialSearchActive = false;
+                filteredEvents = [...originalEvents];
+                displayEvents();
+                updateSpatialSearchInfo();
+                return;
+            }
+            
+            // 図形内のイベントを絞り込み
+            filteredEvents = originalEvents.filter(event => {
+                // RoboCup座標からマップ座標に変換
+                // RoboCup: x1=東西(-52.5~52.5), y1=南北(-34~34)
+                // Leaflet: lng=東西(0~105), lat=南北(0~68)
+                const eventLng = event.x1 + 52.5;  // RoboCup X → Leaflet lng
+                const eventLat = event.y1 + 34;    // RoboCup Y → Leaflet lat  
+                const eventLatLng = L.latLng(eventLat, eventLng);
+                
+                // 座標変換のデバッグ（最初の3個のイベント）
+                if (originalEvents.indexOf(event) < 3) {
+                    console.log(`🔄 Coordinate conversion - Event ${event.id}:`);
+                    console.log(`   RoboCup: (x=${event.x1.toFixed(2)}, y=${event.y1.toFixed(2)})`);
+                    console.log(`   Leaflet: (lat=${eventLat.toFixed(2)}, lng=${eventLng.toFixed(2)})`);
+                }
+                
+                // いずれかの図形に含まれるかチェック
+                return shapes.some(shape => {
+                    // ラベル（番号マーカー）をスキップ
+                    if (shape._parentShape || shape._isShapeLabel) {
+                        return false;
+                    }
+                    if (shape instanceof L.Circle) {
+                        const center = shape.getLatLng();
+                        const radius = shape.getRadius();
+                        
+                        // CRS.Simpleでは手動でユークリッド距離を計算
+                        const dx = eventLatLng.lng - center.lng;
+                        const dy = eventLatLng.lat - center.lat;
+                        const distance = Math.sqrt(dx * dx + dy * dy);
+                        const isInside = distance <= radius;
+                        
+                        // 円のデバッグログ（最初の10個のイベントで詳細ログ）
+                        if (originalEvents.indexOf(event) < 10) {
+                            console.log(`🔵 Circle filter - Event ${event.id}: center=(${center.lat.toFixed(2)},${center.lng.toFixed(2)}), radius=${radius.toFixed(2)}, eventPos=(${eventLatLng.lat.toFixed(2)},${eventLatLng.lng.toFixed(2)}), distance=${distance.toFixed(2)}, inside=${isInside}`);
+                        }
+                        
+                        return isInside;
+                    } else if (shape instanceof L.Rectangle) {
+                        // 矩形の場合のみ
+                        const bounds = shape.getBounds();
+                        return bounds.contains(eventLatLng);
+                    } else if (shape instanceof L.Polygon) {
+                        // 多角形の場合
+                        const latlngs = shape.getLatLngs()[0];
+                        
+                        // 多角形内外判定を実行
+                        const isInside = isPointInPolygon(eventLatLng, latlngs);
+                        
+                        // 最初の20個のイベントで詳細なデバッグ
+                        if (originalEvents.indexOf(event) < 20) {
+                            console.log(`🔎 Event ${event.id}: RoboCup(${event.x1.toFixed(1)},${event.y1.toFixed(1)}) → Leaflet(${eventLatLng.lat.toFixed(1)},${eventLatLng.lng.toFixed(1)}) → ${isInside ? '✅ INSIDE' : '❌ OUTSIDE'}`);
+                        }
+                        
+                        // 予期しない結果（範囲外なのに INSIDE になっているもの）を詳細分析
+                        if (isInside) {
+                            // ポリゴンの境界ボックスをチェック
+                            const minLat = Math.min(...latlngs.map(ll => ll.lat));
+                            const maxLat = Math.max(...latlngs.map(ll => ll.lat));
+                            const minLng = Math.min(...latlngs.map(ll => ll.lng));
+                            const maxLng = Math.max(...latlngs.map(ll => ll.lng));
+                            
+                            const isInBounds = eventLatLng.lat >= minLat && eventLatLng.lat <= maxLat && 
+                                             eventLatLng.lng >= minLng && eventLatLng.lng <= maxLng;
+                            
+                            if (originalEvents.indexOf(event) < 10) {
+                                console.log(`  📦 Bounds check - Event is ${isInBounds ? 'within' : 'OUTSIDE'} bounding box`);
+                                console.log(`  📦 Polygon bounds: lat(${minLat.toFixed(1)}-${maxLat.toFixed(1)}), lng(${minLng.toFixed(1)}-${maxLng.toFixed(1)})`);
+                                
+                                // 詳細なレイキャスティング分析
+                                if (originalEvents.indexOf(event) < 3) {
+                                    console.log(`\n🔬 DETAILED RAY CASTING ANALYSIS:`);
+                                    isPointInPolygonDebug(eventLatLng, latlngs);
+                                }
+                            }
+                        }
+                        
+                        return isInside;
+                    }
+                    return false;
+                });
+            });
+            
+            spatialSearchActive = true;
+            
+            // フィルタリング結果の詳細
+            const circleShapes = shapes.filter(s => s instanceof L.Circle);
+            const rectangleShapes = shapes.filter(s => s instanceof L.Rectangle);
+            const polygonShapes = shapes.filter(s => s instanceof L.Polygon);
+            
+            console.log(`🎯 Spatial filter applied: ${filteredEvents.length} events found (from ${originalEvents.length} total)`);
+            console.log(`   Shapes: ${circleShapes.length} circles, ${rectangleShapes.length} rectangles, ${polygonShapes.length} polygons`);
+            
+            if (filteredEvents.length < 5) {
+                console.log(`   Filtered events: ${filteredEvents.map(e => `#${e.id}(${e.x1.toFixed(1)},${e.y1.toFixed(1)})`).join(', ')}`);
+            }
+            
+            // フィルタ結果が0の場合、詳細調査
+            if (filteredEvents.length === 0) {
+                console.log(`⚠️ No events passed spatial filter! Debugging:`);
+                console.log(`   originalEvents sample:`, originalEvents.slice(0, 3));
+                if (circleShapes.length > 0) {
+                    const circle = circleShapes[0];
+                    const center = circle.getLatLng();
+                    console.log(`   Circle center: (${center.lat.toFixed(2)}, ${center.lng.toFixed(2)}), radius: ${circle.getRadius().toFixed(2)}`);
+                }
+            }
+            
+            displayEvents();
+            updateSpatialSearchInfo();
+        }
+        
+        // 点が多角形内にあるかどうかの判定（Winding Number Algorithm - より確実）
+        function isPointInPolygon(point, latlngs) {
+            // まず境界ボックスで早期除外
+            const minLat = Math.min(...latlngs.map(ll => ll.lat));
+            const maxLat = Math.max(...latlngs.map(ll => ll.lat));
+            const minLng = Math.min(...latlngs.map(ll => ll.lng));
+            const maxLng = Math.max(...latlngs.map(ll => ll.lng));
+            
+            if (point.lat < minLat || point.lat > maxLat || 
+                point.lng < minLng || point.lng > maxLng) {
+                return false;
+            }
+            
+            // Ray casting algorithm（改良版）
+            let inside = false;
+            const n = latlngs.length;
+            
+            for (let i = 0, j = n - 1; i < n; j = i++) {
+                const xi = latlngs[i].lng;
+                const yi = latlngs[i].lat;
+                const xj = latlngs[j].lng;
+                const yj = latlngs[j].lat;
+                
+                if (((yi > point.lat) !== (yj > point.lat)) &&
+                    (point.lng < (xj - xi) * (point.lat - yi) / (yj - yi) + xi)) {
+                    inside = !inside;
+                }
+            }
+            
+            return inside;
+        }
+        
+        // デバッグ付きポリゴン判定（最初の数個のイベントでのみ使用）
+        function isPointInPolygonDebug(point, latlngs) {
+            console.log(`🔍 Testing point (lng:${point.lng.toFixed(2)}, lat:${point.lat.toFixed(2)}) against polygon with ${latlngs.length} vertices`);
+            console.log(`   Polygon vertices: ${latlngs.map((ll, idx) => `[${idx}](lat:${ll.lat.toFixed(1)},lng:${ll.lng.toFixed(1)})`).join(', ')}`);
+            
+            let inside = false;
+            let rayCount = 0;
+            
+            for (let i = 0, j = latlngs.length - 1; i < latlngs.length; j = i++) {
+                const yi = latlngs[i].lat;
+                const yj = latlngs[j].lat;
+                const xi = latlngs[i].lng; 
+                const xj = latlngs[j].lng;
+                
+                console.log(`   Edge ${j}-${i}: (${xi.toFixed(1)},${yi.toFixed(1)}) to (${xj.toFixed(1)},${yj.toFixed(1)})`);
+                
+                // Y座標チェック
+                const condition1 = (yi > point.lat) !== (yj > point.lat);
+                console.log(`     Y-check: (${yi.toFixed(1)} > ${point.lat.toFixed(1)}) !== (${yj.toFixed(1)} > ${point.lat.toFixed(1)}) = ${condition1}`);
+                
+                if (condition1) {
+                    // 交点のX座標を計算
+                    const intersectionLng = (xj - xi) * (point.lat - yi) / (yj - yi) + xi;
+                    const condition2 = point.lng < intersectionLng;
+                    console.log(`     X-intersection: ${intersectionLng.toFixed(2)}, point.lng(${point.lng.toFixed(2)}) < intersection = ${condition2}`);
+                    
+                    if (condition2) {
+                        inside = !inside;
+                        rayCount++;
+                        console.log(`     ✅ RAY HIT #${rayCount} at lng=${intersectionLng.toFixed(2)}, inside=${inside}`);
+                    }
+                } else {
+                    console.log(`     ❌ No Y-range intersection`);
+                }
+            }
+            
+            console.log(`📐 Final result: ${rayCount} ray hits, point is ${inside ? 'INSIDE ✅' : 'OUTSIDE ❌'} the polygon`);
+            return inside;
+        }
+        
+        // 範囲検索コントロールを表示
+        function showSpatialSearchControls() {
+            document.getElementById('clearSearchBtn').style.display = 'flex';
+            document.getElementById('shapeToggleBtn').style.display = 'flex';
+            
+            // 図形表示状態に応じてボタンの表示を更新
+            const toggleBtn = document.getElementById('shapeToggleBtn');
+            if (shapesVisible) {
+                toggleBtn.innerHTML = '👁️';
+                toggleBtn.className = 'shape-toggle-btn';
+                toggleBtn.title = 'Hide shapes (図形を非表示にする)';
+            } else {
+                toggleBtn.innerHTML = '👁️‍🗨️';
+                toggleBtn.className = 'shape-toggle-btn hidden';
+                toggleBtn.title = 'Show shapes (図形を表示する)';
+            }
+            
+            // 範囲が描画されたことを記録（メッセージは表示しない）
+        }
+        
+        // 範囲検索コントロールを非表示
+        function hideSpatialSearchControls() {
+            document.getElementById('clearSearchBtn').style.display = 'none';
+            document.getElementById('spatialSearchInfo').style.display = 'none';
+            document.getElementById('shapeToggleBtn').style.display = 'none';
+        }
+        
+        // 図形表示切り替え機能
+        function toggleShapeVisibility() {
+            shapesVisible = !shapesVisible;
+            const toggleBtn = document.getElementById('shapeToggleBtn');
+            
+            if (shapesVisible) {
+                // 図形を表示
+                map.addLayer(drawnItems);
+                toggleBtn.innerHTML = '👁️';
+                toggleBtn.className = 'shape-toggle-btn';
+                toggleBtn.title = 'Hide shapes (図形を非表示にする)';
+            } else {
+                // 図形を非表示
+                map.removeLayer(drawnItems);
+                toggleBtn.innerHTML = '👁️‍🗨️';
+                toggleBtn.className = 'shape-toggle-btn hidden';
+                toggleBtn.title = 'Show shapes (図形を表示する)';
+            }
+        }
+        
+        // フォーム送信時に空間検索データを設定（複数図形対応）
+        function setSpatialSearchData() {
+            const shapes = drawnItems.getLayers();
+            if (shapes.length === 0) {
+                // 空間検索データをクリア
+                document.getElementById('shape_type').value = '';
+                document.getElementById('shape_data').value = '';
+                return;
+            }
+            
+            // 複数図形の場合
+            if (shapes.length > 1) {
+                const multiShapeData = [];
+                shapes.forEach(shape => {
+                    if (shape instanceof L.Circle) {
+                        const center = shape.getLatLng();
+                        multiShapeData.push({
+                            type: 'circle',
+                            data: {
+                                center: {
+                                    x: center.lat,
+                                    y: center.lng
+                                },
+                                radius: shape.getRadius()
+                            }
+                        });
+                    } else if (shape instanceof L.Rectangle) {
+                        const bounds = shape.getBounds();
+                        multiShapeData.push({
+                            type: 'rectangle',
+                            data: {
+                                bounds: {
+                                    north: bounds.getNorth(),
+                                    south: bounds.getSouth(),
+                                    east: bounds.getEast(),
+                                    west: bounds.getWest()
+                                }
+                            }
+                        });
+                    } else if (shape instanceof L.Polygon) {
+                        const latlngs = shape.getLatLngs()[0];
+                        multiShapeData.push({
+                            type: 'polygon',
+                            data: {
+                                coordinates: latlngs.map(latlng => ({
+                                    x: latlng.lat,
+                                    y: latlng.lng
+                                }))
+                            }
+                        });
+                    }
+                });
+                
+                document.getElementById('shape_type').value = 'multiple';
+                document.getElementById('shape_data').value = JSON.stringify(multiShapeData);
+                return;
+            }
+            
+            // 単一図形の場合（従来の処理）
+            const shape = shapes[0];
+            let shapeType = '';
+            let shapeData = {};
+            
+            if (shape instanceof L.Circle) {
+                shapeType = 'circle';
+                const center = shape.getLatLng();
+                shapeData = {
+                    center: {
+                        x: center.lat,
+                        y: center.lng
+                    },
+                    radius: shape.getRadius()
+                };
+            } else if (shape instanceof L.Rectangle) {
+                shapeType = 'rectangle';
+                const bounds = shape.getBounds();
+                shapeData = {
+                    bounds: {
+                        north: bounds.getNorth(),
+                        south: bounds.getSouth(),
+                        east: bounds.getEast(),
+                        west: bounds.getWest()
+                    }
+                };
+            } else if (shape instanceof L.Polygon) {
+                shapeType = 'polygon';
+                const latlngs = shape.getLatLngs()[0];
+                shapeData = {
+                    coordinates: latlngs.map(latlng => ({
+                        x: latlng.lat,  // マップ座標のlat
+                        y: latlng.lng   // マップ座標のlng
+                    }))
+                };
+            }
+            
+            // 隠しフィールドに設定
+            document.getElementById('shape_type').value = shapeType;
+            document.getElementById('shape_data').value = JSON.stringify(shapeData);
+        }
+        
+        // 図形データをフォームの隠しフィールドに設定する関数
+        function setShapeDataToForm() {
+            const allLayers = drawnItems.getLayers();
+            const shapes = allLayers.filter(s => !s._parentShape && !s._isShapeLabel);
+            
+            if (shapes.length === 0) {
+                // 図形がない場合はクリア
+                document.getElementById('shape_type').value = '';
+                document.getElementById('shape_data').value = '';
+                return;
+            }
+            
+            if (shapes.length > 1) {
+                // 複数図形の場合
+                const multiShapeData = [];
+                shapes.forEach((shape, index) => {
+                    if (shape instanceof L.Circle) {
+                        const center = shape.getLatLng();
+                        multiShapeData.push({
+                            type: 'circle',
+                            data: {
+                                center: {
+                                    x: center.lng,  // lng → RoboCup X軸
+                                    y: center.lat   // lat → RoboCup Y軸
+                                },
+                                radius: shape.getRadius()
+                            }
+                        });
+                    } else if (shape instanceof L.Rectangle) {
+                        const bounds = shape.getBounds();
+                        multiShapeData.push({
+                            type: 'rectangle',
+                            data: {
+                                bounds: {
+                                    north: bounds.getNorth(),
+                                    south: bounds.getSouth(),
+                                    east: bounds.getEast(),
+                                    west: bounds.getWest()
+                                }
+                            }
+                        });
+                    } else if (shape instanceof L.Polygon) {
+                        const latlngs = shape.getLatLngs()[0];
+                        multiShapeData.push({
+                            type: 'polygon',
+                            data: {
+                                coordinates: latlngs.map(latlng => ({
+                                    x: latlng.lng,  // lng → RoboCup X軸
+                                    y: latlng.lat   // lat → RoboCup Y軸
+                                }))
+                            }
+                        });
+                    }
+                });
+                
+                document.getElementById('shape_type').value = 'multiple';
+                document.getElementById('shape_data').value = JSON.stringify(multiShapeData);
+                return;
+            }
+            
+            // 単一図形の場合
+            const shape = shapes[0];
+            let shapeType = '';
+            let shapeData = {};
+            
+            if (shape instanceof L.Circle) {
+                shapeType = 'circle';
+                const center = shape.getLatLng();
+                shapeData = {
+                    center: {
+                        x: center.lng,  // Leaflet lng → RoboCup X軸 (東西方向: 0~105)
+                        y: center.lat   // Leaflet lat → RoboCup Y軸 (南北方向: 0~68)
+                    },
+                    radius: shape.getRadius()
+                };
+                console.log(`🔵 Circle shape data: center=(lat:${center.lat.toFixed(2)}, lng:${center.lng.toFixed(2)}) = (robocup_x:${center.lng.toFixed(2)}, robocup_y:${center.lat.toFixed(2)}), radius=${shape.getRadius().toFixed(2)}`);
+            } else if (shape instanceof L.Rectangle) {
+                shapeType = 'rectangle';
+                const bounds = shape.getBounds();
+                shapeData = {
+                    bounds: {
+                        north: bounds.getNorth(),  // lat → RoboCup Y軸の上端
+                        south: bounds.getSouth(),  // lat → RoboCup Y軸の下端
+                        east: bounds.getEast(),    // lng → RoboCup X軸の右端
+                        west: bounds.getWest()     // lng → RoboCup X軸の左端
+                    }
+                };
+                console.log(`🟩 Rectangle shape data: bounds={N(lat):${bounds.getNorth().toFixed(2)}, S(lat):${bounds.getSouth().toFixed(2)}, E(lng):${bounds.getEast().toFixed(2)}, W(lng):${bounds.getWest().toFixed(2)}}`);
+            } else if (shape instanceof L.Polygon) {
+                shapeType = 'polygon';
+                const latlngs = shape.getLatLngs()[0];
+                shapeData = {
+                    coordinates: latlngs.map(latlng => ({
+                        x: latlng.lng,  // lng → RoboCup X軸 (東西方向: 0~105)
+                        y: latlng.lat   // lat → RoboCup Y軸 (南北方向: 0~68)
+                    }))
+                };
+                console.log(`🔸 Polygon shape data: ${latlngs.length} points, coords={${latlngs.map(ll => `(lat:${ll.lat.toFixed(1)},lng:${ll.lng.toFixed(1)})`).join(', ')}}`);
+            }
+            
+            // 隠しフィールドに設定
+            document.getElementById('shape_type').value = shapeType;
+            document.getElementById('shape_data').value = JSON.stringify(shapeData);
+        }
+
+        
+        // 検索情報の更新
+        function updateSpatialSearchInfo() {
+            const clearBtn = document.getElementById('clearSearchBtn');
+            const eventCount = document.getElementById('eventCount');
+            const spatialNote = document.getElementById('spatialFilterNote');
+            
+            // 図形が存在するかチェック
+            const shapes = drawnItems.getLayers().filter(s => !s._parentShape && !s._isShapeLabel);
+            const hasShapes = shapes.length > 0;
+            
+            // Display Limitの値を取得
+            const limitElement = document.getElementById('limit');
+            const displayLimit = limitElement ? parseInt(limitElement.value) : 1000;
+            
+            if (hasShapes) {
+                clearBtn.style.display = 'flex';
+                spatialNote.style.display = 'inline';
+            } else {
+                clearBtn.style.display = 'none';
+                spatialNote.style.display = 'none';
+            }
+            
+            // イベント数の表示（フィルタリング結果を含む）
+            const totalEvents = spatialSearchActive ? filteredEvents.length : originalEvents.length;
+            const actuallyShown = Math.min(totalEvents, displayLimit);
+            
+            if (totalEvents > displayLimit) {
+                eventCount.textContent = `Showing ${actuallyShown} events (limited from ${totalEvents})`;
+            } else {
+                eventCount.textContent = `Showing ${actuallyShown} events`;
+            }
+        }
+        
+        function displayEvents() {
+            window.eventLayer.clearLayers();
+            
+            // Display Limitの値を取得
+            const limitElement = document.getElementById('limit');
+            const displayLimit = limitElement ? parseInt(limitElement.value) : 1000;
+            
+            // デバッグ：イベントデータの状態を確認
+            console.log(`🔍 displayEvents() debug:`);
+            console.log(`   originalEvents.length: ${originalEvents.length}`);
+            console.log(`   filteredEvents.length: ${filteredEvents.length}`);
+            console.log(`   spatialSearchActive: ${spatialSearchActive}`);
+            
+            // フィルタリングされたイベントを使用（空間検索が有効な場合はfilteredEvents、そうでなければoriginalEvents）
+            let eventsToShow = spatialSearchActive ? filteredEvents : originalEvents;
+            
+            // Display Limitを適用
+            if (eventsToShow.length > displayLimit) {
+                eventsToShow = eventsToShow.slice(0, displayLimit);
+                console.log(`📊 Display limit applied: showing ${displayLimit} out of ${originalEvents.length} events`);
+            }
+            
+            eventsToShow.forEach(event => {
+                // 座標変換（RoboCupフィールド座標 → マップ座標）
+                // RoboCup: x1=東西(-52.5~52.5), y1=南北(-34~34)
+                // Leaflet: lng=東西(0~105), lat=南北(0~68)
+                const startLng = (event.x1 + 52.5);  // RoboCup X → Leaflet lng
+                const startLat = (event.y1 + 34);    // RoboCup Y → Leaflet lat
+                
+                let endLng = null, endLat = null;
+                if (event.x2 !== null && event.y2 !== null) {
+                    endLng = (event.x2 + 52.5);  // RoboCup X → Leaflet lng
+                    endLat = (event.y2 + 34);    // RoboCup Y → Leaflet lat
+                }
+                
+                // チームに応じた色設定
+                let color = '#6c757d';  // neutral
+                if (event.side1 === 'left') color = '#dc3545';      // red
+                else if (event.side1 === 'right') color = '#007bff'; // blue
+                
+                // 開始点マーカー (Leafletは[lat, lng]の順序)
+                const startMarker = L.circleMarker([startLat, startLng], {
+                    radius: 4,
+                    color: color,
+                    fillColor: color,
+                    fillOpacity: 0.8,
+                    weight: 2
+                });
+                
+                // 移動がある場合は線分を描画
+                if (endLat !== null && endLng !== null) {
+                    const line = L.polyline([[startLat, startLng], [endLat, endLng]], {
+                        color: color,
+                        weight: 3,
+                        opacity: 0.7
+                    });
+                         // クリックイベント
+                line.on('click', () => {
+                    if (window.sequenceExtractionMode) {
+                        const sequence = extractAttackSequence(event);
+                        highlightSequence(sequence);
+                    } else {
+                        showEventDetails(event);
+                    }
+                });
+                window.eventLayer.addLayer(line);
+                    
+                    // 終了点マーカー
+                    const endMarker = L.circleMarker([endLat, endLng], {
+                        radius: 3,
+                        color: color,
+                        fillColor: 'white',
+                        fillOpacity: 0.8,
+                        weight: 2
+                    });
+                    endMarker.on('click', () => {
+                        if (window.sequenceExtractionMode) {
+                            const sequence = extractAttackSequence(event);
+                            highlightSequence(sequence);
+                        } else {
+                            showEventDetails(event);
+                        }
+                    });
+                    window.eventLayer.addLayer(endMarker);
+                }
+                
+                startMarker.on('click', () => {
+                    if (window.sequenceExtractionMode) {
+                        const sequence = extractAttackSequence(event);
+                        highlightSequence(sequence);
+                    } else {
+                        showEventDetails(event);
+                    }
+                });
+                window.eventLayer.addLayer(startMarker);
+            });
+            
+            // イベント数の表示を更新
+            updateSpatialSearchInfo();
+        }
+        
+        // 数値を適切にフォーマットする関数（不要な末尾の0を削除）
+        function formatNumber(num) {
+            return parseFloat(num.toFixed(6)).toString();
+        }
+        
+        // イベント詳細を表示
+        function showEventDetails(event) {
+            // 時間の詳細情報を計算
+            const time1 = event.time1;
+            const gameMinute = Math.floor(time1 / 60);
+            const gameSecond = Math.floor(time1 % 60);
+            const halfLabel = time1 <= 3000 ? '1st Half' : '2nd Half';
+            const halfTime = time1 <= 3000 ? time1 : time1 - 3000;
+            const halfMinute = Math.floor(halfTime / 60);
+            const halfSecond = Math.floor(halfTime % 60);
+            
+            const details = `
+                <strong>Type:</strong> ${event.type}<br>
+                <strong>Mode:</strong> ${event.mode1 || 'N/A'}<br>
+                <strong>⏱️ Time:</strong> ${formatNumber(event.time1)}s 
+                <small>(${gameMinute}:${gameSecond.toString().padStart(2, '0')})</small><br>
+                <strong>📅 Game Period:</strong> ${halfLabel} 
+                <small>(${halfMinute}:${halfSecond.toString().padStart(2, '0')})</small><br>
+                ${event.time2 !== null ? `<strong>End Time:</strong> ${formatNumber(event.time2)}s<br>` : ''}
+                <strong>Side1:</strong> ${event.side1 || 'N/A'}<br>
+                <strong>Player1:</strong> ${event.unum1 || 'N/A'}<br>
+                ${event.side2 ? `<strong>Side2:</strong> ${event.side2}<br>` : ''}
+                ${event.unum2 ? `<strong>Player2:</strong> ${event.unum2}<br>` : ''}
+                <strong>Start Position:</strong> (${formatNumber(event.x1)}, ${formatNumber(event.y1)})<br>
+                ${event.x2 !== null ? `<strong>End Position:</strong> (${formatNumber(event.x2)}, ${formatNumber(event.y2)})<br>` : ''}
+                <strong>Success:</strong> ${event.success !== null ? (event.success ? 'Yes' : 'No') : 'N/A'}<br>
+                <strong>Match:</strong> ${event.match_id}
+            `;
+            
+            document.getElementById('eventDetails').innerHTML = details;
+            document.getElementById('eventInfo').style.display = 'block';
+            
+            // 前のハイライトを削除
+            if (highlightedEventLayer) {
+                map.removeLayer(highlightedEventLayer);
+            }
+            
+            // 新しいハイライト用レイヤーを作成
+            highlightedEventLayer = L.layerGroup();
+            
+            // 座標変換（RoboCup → Leaflet）
+            const startLng = (event.x1 + 52.5);  // RoboCup X → Leaflet lng
+            const startLat = (event.y1 + 34);    // RoboCup Y → Leaflet lat
+            
+            let endLng = null, endLat = null;
+            if (event.x2 !== null && event.y2 !== null) {
+                endLng = (event.x2 + 52.5);  // RoboCup X → Leaflet lng
+                endLat = (event.y2 + 34);    // RoboCup Y → Leaflet lat
+            }
+            
+            // チームに応じた色設定
+            let color = '#6c757d';
+            if (event.side1 === 'left') color = '#dc3545';
+            else if (event.side1 === 'right') color = '#007bff';
+            
+            // ハイライト用の大きな開始点マーカー
+            const highlightStartMarker = L.circleMarker([startLat, startLng], {
+                radius: 8,
+                color: '#FFD700',  // ゴールド色
+                fillColor: color,
+                fillOpacity: 1,
+                weight: 4,
+                className: 'highlighted-event'
+            });
+            highlightedEventLayer.addLayer(highlightStartMarker);
+            
+            // 移動がある場合は太いハイライト線を描画
+            if (endLat !== null && endLng !== null) {
+                const highlightLine = L.polyline([[startLat, startLng], [endLat, endLng]], {
+                    color: '#FFD700',  // ゴールド色の枠
+                    weight: 8,
+                    opacity: 0.8,
+                    className: 'highlighted-event'
+                });
+                highlightedEventLayer.addLayer(highlightLine);
+                
+                // 元の色の線を上に重ねる
+                const originalLine = L.polyline([[startLat, startLng], [endLat, endLng]], {
+                    color: color,
+                    weight: 4,
+                    opacity: 1
+                });
+                highlightedEventLayer.addLayer(originalLine);
+                
+                // ハイライト用の終了点マーカー
+                const highlightEndMarker = L.circleMarker([endLat, endLng], {
+                    radius: 6,
+                    color: '#FFD700',
+                    fillColor: 'white',
+                    fillOpacity: 1,
+                    weight: 4,
+                    className: 'highlighted-event'
+                });
+                highlightedEventLayer.addLayer(highlightEndMarker);
+            }
+            
+            // ハイライトレイヤーをマップに追加
+            map.addLayer(highlightedEventLayer);
+            
+            // テーブル行をハイライト
+            document.querySelectorAll('.event-row').forEach(row => {
+                row.classList.remove('table-warning');
+            });
+            const row = document.querySelector(`[data-event-id="${event.id}"]`);
+            if (row) {
+                row.classList.add('table-warning');
+                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+        
+        // ページ読み込み時に空間検索パラメータがある場合の処理
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('shape_type') && urlParams.get('shape_data')) {
+            // 空間検索が適用されていることを記録
+            spatialSearchActive = true;
+            
+            // URLパラメータから図形を復元
+            restoreShapesFromParams(urlParams.get('shape_type'), urlParams.get('shape_data'));
+            
+            // クリアボタンを表示して、さらなる条件絞り込みを可能にする
+            document.getElementById('clearSearchBtn').style.display = 'flex';
+        }
+        
+        // 初期表示処理（フロントエンドフィルタリング付き）
+        console.log('🎯 Initial display: showing events from backend');
+        
+        // 図形がある場合はフロントエンド空間フィルタリングを適用
+        if (drawnItems.getLayers().length > 0) {
+            console.log('🎯 Applying frontend spatial filtering');
+            performSpatialFilter();
+        } else {
+            displayEvents();
+        }
+        
+        // ページ読み込み完了後にイベント表示を確認
+        setTimeout(() => {
+            console.log('🔄 Page loaded, ensuring events are displayed...');
+            if (window.eventLayer.getLayers().length === 0) {
+                console.log('🎯 Displaying events from backend after page load');
+                displayEvents();
+                console.log(`📊 Event layer contains ${window.eventLayer.getLayers().length} items`);
+                if (window.eventLayer.getLayers().length === 0) {
+                    console.warn('⚠️ No events added to map - check displayEvents() function');
+                }
+            }
+        }, 100);
+        
+        // URLパラメータから図形を復元する関数
+        function restoreShapesFromParams(shapeType, shapeData) {
+            try {
+                const data = JSON.parse(shapeData);
+                
+                if (shapeType === 'multiple') {
+                    // 複数図形の復元
+                    data.forEach((shapeInfo, index) => {
+                        restoreSingleShape(shapeInfo.type, shapeInfo.data, index + 1);
+                    });
+                } else {
+                    // 単一図形の復元
+                    restoreSingleShape(shapeType, data, 1);
+                }
+                
+                // 図形選択状態表示を更新
+                updateMultipleShapeIndicator();
+                
+                // 統計情報も更新
+                const shapes = drawnItems.getLayers().filter(l => !l._parentShape);
+                updateSpatialStatsDisplay(shapes.length);
+                
+                // 空間検索コントロール（切り替えボタンを含む）を表示
+                showSpatialSearchControls();
+                
+                // フロントエンド空間フィルタリングを実行
+                console.log('🎯 Executing frontend spatial filtering after shape restoration');
+                performSpatialFilter();
+                
+            } catch (error) {
+                console.warn('図形の復元に失敗しました:', error);
+            }
+        }
+        
+        // 単一図形を復元する関数
+        function restoreSingleShape(type, data, number) {
+            let layer = null;
+            
+            if (type === 'circle') {
+                // 保存時の座標変換を逆変換: x → lng, y → lat
+                const center = L.latLng(data.center.y, data.center.x);
+                layer = L.circle(center, {
+                    radius: data.radius,
+                    color: '#ff6b35',
+                    weight: 3,
+                    opacity: 0.8,
+                    fillOpacity: 0.3
+                });
+                console.log(`🔄 Circle restored: saved(x:${data.center.x}, y:${data.center.y}) → leaflet(lat:${data.center.y}, lng:${data.center.x}), radius:${data.radius}`);
+            } else if (type === 'rectangle') {
+                const bounds = L.latLngBounds(
+                    L.latLng(data.bounds.south, data.bounds.west),
+                    L.latLng(data.bounds.north, data.bounds.east)
+                );
+                layer = L.rectangle(bounds, {
+                    color: '#ff6b35',
+                    weight: 3,
+                    opacity: 0.8,
+                    fillOpacity: 0.3
+                });
+            } else if (type === 'polygon') {
+                // 保存時の座標変換を逆変換: x → lng, y → lat
+                const latlngs = data.coordinates.map(coord => L.latLng(coord.y, coord.x));
+                layer = L.polygon(latlngs, {
+                    color: '#ff6b35',
+                    weight: 3,
+                    opacity: 0.9,
+                    fillColor: '#ff6b35',
+                    fillOpacity: 0.2,
+                    dashArray: '5, 5'
+                });
+            }
+            
+            if (layer) {
+                drawnItems.addLayer(layer);
+                
+                // 図形番号ラベルを追加
+                addShapeNumberLabel(layer);
+            }
+        }
+        
+        // ページ読み込み時にシーケンスフィルタがある場合の処理
+        if (urlParams.get('sequence_ids')) {
+            // シーケンスフィルタクリアボタンを表示
+            document.getElementById('clearSequenceFilterBtn').style.display = 'inline-block';
+        }
+        
+        // フィルタクリア
+        function clearFilters() {
+            document.getElementById('filterForm').reset();
+            clearSpatialSearch();
+            clearSequenceHighlight();
+            window.location.href = '{{ url_for("main.interactive_gis_map") }}';
+        }
+
+        // 座標入力による矩形検索を適用
+        function applyCoordinateSearch() {
+            const xmin = parseFloat(document.getElementById('rect_xmin').value);
+            const ymin = parseFloat(document.getElementById('rect_ymin').value);
+            const xmax = parseFloat(document.getElementById('rect_xmax').value);
+            const ymax = parseFloat(document.getElementById('rect_ymax').value);
+            
+            // 入力値の検証
+            if (isNaN(xmin) || isNaN(ymin) || isNaN(xmax) || isNaN(ymax)) {
+                alert('すべての座標値を入力してください。');
+                return;
+            }
+            
+            // 範囲の妥当性をチェック
+            if (xmin >= xmax || ymin >= ymax) {
+                alert('座標範囲が無効です。Min値はMax値より小さくしてください。');
+                return;
+            }
+            
+            // フィールド範囲内かチェック
+            if (xmin < -52.5 || xmax > 52.5 || ymin < -34 || ymax > 34) {
+                alert('座標値がフィールド範囲外です。X: -52.5~52.5, Y: -34~34の範囲で入力してください。');
+                return;
+            }
+            
+            // 既存の図形をクリア
+            drawnItems.clearLayers();
+            
+            // RoboCup座標系からLeaflet座標系に変換
+            // RoboCup: X(-52.5~52.5), Y(-34~34) → Leaflet: lng(0~105), lat(0~68)
+            const leafletBounds = L.latLngBounds(
+                [ymin + 34, xmin + 52.5], // southwest corner (lat, lng)
+                [ymax + 34, xmax + 52.5]  // northeast corner (lat, lng)
+            );
+            
+            // 矩形を地図上に描画
+            const rectangle = L.rectangle(leafletBounds, {
+                color: '#ff6b35',
+                weight: 3,
+                fillColor: '#ff6b35',
+                fillOpacity: 0.2,
+                className: 'selection-rectangle'
+            });
+            
+            drawnItems.addLayer(rectangle);
+            
+            // 図形番号ラベルを追加
+            addShapeNumberLabel(rectangle);
+            
+            // 空間検索コントロールを表示
+            showSpatialSearchControls();
+            
+            // 図形データをフォームに設定
+            setShapeDataToForm();
+            
+            // 選択状態表示を更新
+            updateShapeSelectedIndicator(rectangle);
+            
+            console.log(`📐 Coordinate search applied: RoboCup(${xmin},${ymin})-(${xmax},${ymax}) → Leaflet bounds: ${leafletBounds.toString()}`);
+            
+            // フォームを自動送信して検索を実行
+            document.getElementById('filterForm').submit();
+        }
+        
+        // 座標入力フィールドをクリア
+        function clearCoordinateInputs() {
+            document.getElementById('rect_xmin').value = '';
+            document.getElementById('rect_ymin').value = '';
+            document.getElementById('rect_xmax').value = '';
+            document.getElementById('rect_ymax').value = '';
+        }
+        
+        // 座標プリセット機能（よく使用される範囲を提供）
+        function setCoordinatePreset(preset) {
+            switch(preset) {
+                case 'full_field':
+                    setCoordinateInputs(-52.5, -34, 52.5, 34);
+                    break;
+                case 'left_half':
+                    setCoordinateInputs(-52.5, -34, 0, 34);
+                    break;
+                case 'right_half':
+                    setCoordinateInputs(0, -34, 52.5, 34);
+                    break;
+                case 'center_circle':
+                    setCoordinateInputs(-10, -10, 10, 10);
+                    break;
+                case 'left_penalty':
+                    setCoordinateInputs(-52.5, -20.15, -36, 20.15);
+                    break;
+                case 'right_penalty':
+                    setCoordinateInputs(36, -20.15, 52.5, 20.15);
+                    break;
+            }
+        }
+        
+        // 座標値を設定するヘルパー関数
+        function setCoordinateInputs(xmin, ymin, xmax, ymax) {
+            document.getElementById('rect_xmin').value = xmin;
+            document.getElementById('rect_ymin').value = ymin;
+            document.getElementById('rect_xmax').value = xmax;
+            document.getElementById('rect_ymax').value = ymax;
+        }
+
+        // 座標プリセット適用関数
+        function applyCoordinatePreset() {
+            const preset = document.getElementById('coordinate_preset').value;
+            if (preset) {
+                setCoordinatePreset(preset);
+            }
+        }
+        
+        // フォーム送信前の処理
+        document.getElementById('filterForm').addEventListener('submit', function(e) {
+            console.log(`🔍 Search button pressed`);
+            
+            const shapes = drawnItems.getLayers().filter(s => !s._parentShape && !s._isShapeLabel);
+            
+            // 図形がある場合は隠しフィールドに設定してフォーム送信
+            if (shapes.length > 0) {
+                console.log(`📐 Shapes detected: setting up backend spatial search`);
+                
+                // 図形データをフォームの隠しフィールドに設定
+                setShapeDataToForm();
+                
+                // 通常のフォーム送信で処理
+                console.log(`✅ Shape data set, proceeding with backend form submission`);
+            } else {
+                // 図形がない場合は空間検索データをクリア
+                console.log(`📐 No shapes: clearing spatial search data`);
+                document.getElementById('shape_type').value = '';
+                document.getElementById('shape_data').value = '';
+            }
+            
+            // 通常のフォーム送信を続行
+        });
+        
+        // 図形表示切り替えボタンのイベントリスナー
+        document.getElementById('shapeToggleBtn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            toggleShapeVisibility();
+        });
+        
+        // 空間検索クリアボタンのイベントリスナー
+        document.getElementById('clearSearchBtn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            clearSpatialSearch();
+        });
+        
+        // テーブル行クリックでイベント詳細のみを表示（マップ位置は変更しない）
+        document.querySelectorAll('.event-row').forEach(row => {
+            row.addEventListener('click', function(e) {
+                // イベントの伝播を停止してマップのクリックイベントを防ぐ
+                e.stopPropagation();
+                e.preventDefault();
+                
+                const eventId = parseInt(this.dataset.eventId);
+                const eventsToSearch = spatialSearchActive ? filteredEvents : originalEvents;
+                const event = eventsToSearch.find(e => e.id === eventId);
+                if (event) {
+                    showEventDetails(event);
+                    // マップの位置は変更しない
+                }
+            });
+        });
+        
+        // テーブル領域全体でのクリックイベント伝播を停止
+        const tableContainer = document.querySelector('.table-responsive');
+        if (tableContainer) {
+            tableContainer.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+            
+            // テーブル要素自体でも停止
+            const table = tableContainer.querySelector('table');
+            if (table) {
+                table.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
+            }
+        }
+        
+        // Event Listセクション全体でも停止 
+        const eventListSection = document.querySelector('.mt-4');
+        if (eventListSection && eventListSection.querySelector('h4')) {
+            eventListSection.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+        }
+        
+        // マップクリックで詳細パネルを隠す
+        map.on('click', function(e) {
+            // イベントマーカーでなければ詳細パネルを隠す
+            if (!e.originalEvent.target.classList.contains('leaflet-interactive')) {
+                if (!sequenceExtractionMode) {
+                    document.getElementById('eventInfo').style.display = 'none';
+                    
+                    // ハイライトもクリア
+                    if (highlightedEventLayer) {
+                        map.removeLayer(highlightedEventLayer);
+                        highlightedEventLayer = null;
+                    }
+                    
+                    // テーブル行のハイライトもクリア
+                    document.querySelectorAll('.event-row').forEach(row => {
+                        row.classList.remove('table-warning');
+                    });
+                } else {
+                    // シーケンス抽出モードの場合はシーケンスハイライトをクリア
+                    clearSequenceHighlight();
+                }
+            }
+        });
+        
+        // 時間プリセット機能
+        function applyTimePreset() {
+            const preset = document.getElementById('time_preset').value;
+            
+            // メインの時間検索フィールド
+            const minTimeInput = document.getElementById('min_time');
+            const maxTimeInput = document.getElementById('max_time');
+            
+            let minValue = '';
+            let maxValue = '';
+            
+            switch(preset) {
+                case 'full_game':
+                    minValue = '0';
+                    maxValue = '6000';
+                    break;
+                case 'first_half':
+                    minValue = '0';
+                    maxValue = '3000';
+                    break;
+                case 'second_half':
+                    minValue = '3000';
+                    maxValue = '6000';
+                    break;
+                case 'first_15min':
+                    minValue = '0';
+                    maxValue = '900';
+                    break;
+                case 'last_15min':
+                    minValue = '5100';
+                    maxValue = '6000';
+                    break;
+                case 'middle_game':
+                    minValue = '1500';
+                    maxValue = '4500';
+                    break;
+                default:
+                    // Custom - 何もしない
+                    return;
+            }
+            
+            // メインのフィールドを更新
+            if (minTimeInput) minTimeInput.value = minValue;
+            if (maxTimeInput) maxTimeInput.value = maxValue;
+            
+            console.log('Time preset applied:', preset, 'Min:', minValue, 'Max:', maxValue);
+        }
+        
+        // 時間セルのスタイリング機能は削除
+        
+        // イベント詳細パネルを閉じる
+        function closeEventDetails() {
+            document.getElementById('eventInfo').style.display = 'none';
+            
+            // ハイライトもクリア
+            if (highlightedEventLayer) {
+                map.removeLayer(highlightedEventLayer);
+                highlightedEventLayer = null;
+            }
+            
+            // テーブル行のハイライトもクリア
+            document.querySelectorAll('.event-row').forEach(row => {
+                row.classList.remove('table-warning');
+            });
+        }
+        
+        // シーケンス抽出モードの切り替え
+        function toggleSequenceExtractionMode() {
+            window.sequenceExtractionMode = !window.sequenceExtractionMode;
+            const btn = document.getElementById('sequenceExtractionBtn');
+            const infoPanel = document.getElementById('sequenceInfoPanel');
+            
+            if (window.sequenceExtractionMode) {
+                btn.classList.add('sequence-extraction-mode');
+                btn.innerHTML = '🔗 Exit Sequence Mode';
+                infoPanel.style.display = 'block';
+            } else {
+                btn.classList.remove('sequence-extraction-mode');
+                btn.innerHTML = '🔗 Extract Sequence';
+                infoPanel.style.display = 'none';
+                clearSequenceHighlight();
+            }
+        }
+        
+        // シーケンスハイライトをクリア
+        function clearSequenceHighlight() {
+            if (highlightedSequenceLayer) {
+                map.removeLayer(highlightedSequenceLayer);
+                highlightedSequenceLayer = null;
+            }
+            currentSequenceIds = null;
+            hideSequenceFilterButtons();
+        }
+        
+        // 攻撃シーケンスを抽出する関数（フロントエンドベース）
+        function extractAttackSequence(selectedEvent) {
+            const eventsToSearch = spatialSearchActive ? filteredEvents : originalEvents;
+            const matchEvents = eventsToSearch
+                .filter(e => e.match_id === selectedEvent.match_id)
+                .sort((a, b) => a.time1 - b.time1);
+            
+            const selectedIndex = matchEvents.findIndex(e => e.id === selectedEvent.id);
+            if (selectedIndex === -1) return [selectedEvent];
+            
+            const selectedTeam = selectedEvent.side1;
+            if (!selectedTeam) return [selectedEvent];
+            
+            // 攻撃シーケンスの開始を見つける（後方検索）
+            let sequenceStart = selectedIndex;
+            for (let i = selectedIndex - 1; i >= 0; i--) {
+                const event = matchEvents[i];
+                
+                // リセット条件
+                if (event.type === "Interception" && event.mode1 === "play_on" && 
+                    event.x2 === 0.0 && event.y2 === 0.0) {
+                    break;
+                }
+                
+                if (event.side1 === selectedTeam) {
+                    sequenceStart = i;
+                } else if (event.side1 && event.side1 !== selectedTeam) {
+                    break;
+                }
+            }
+            
+            // 攻撃シーケンスの終了を見つける（前方検索）
+            let sequenceEnd = selectedIndex;
+            for (let i = selectedIndex + 1; i < matchEvents.length; i++) {
+                const event = matchEvents[i];
+                
+                // リセット条件
+                if (event.type === "Interception" && event.mode1 === "play_on" && 
+                    event.x2 === 0.0 && event.y2 === 0.0) {
+                    break;
+                }
+                
+                // ボールが相手に渡った、またはneutralになった場合
+                if (event.side2 && event.side2 !== selectedTeam) {
+                    sequenceEnd = i;
+                    break;
+                } else if (event.side1 && event.side1 !== selectedTeam) {
+                    break;
+                } else if (event.side1 === selectedTeam) {
+                    sequenceEnd = i;
+                }
+            }
+            
+            // シーケンスを抽出（同じチームのイベントのみ）
+            const sequence = [];
+            for (let i = sequenceStart; i <= sequenceEnd; i++) {
+                const event = matchEvents[i];
+                if (event.side1 === selectedTeam) {
+                    sequence.push(event);
+                }
+            }
+            
+            return sequence;
+        }
+        
+        // シーケンスをハイライト表示
+        function highlightSequence(sequence) {
+            clearSequenceHighlight();
+            
+            if (sequence.length === 0) return;
+            
+            highlightedSequenceLayer = L.layerGroup();
+            
+            // シーケンスIDを記録
+            currentSequenceIds = sequence.map(event => event.id);
+            
+            sequence.forEach((event, index) => {
+                // 座標変換（RoboCup → Leaflet）
+                // RoboCup: x1=東西(-52.5~52.5), y1=南北(-34~34)
+                // Leaflet: lng=東西(0~105), lat=南北(0~68)
+                const startLng = (event.x1 + 52.5);  // RoboCup X → Leaflet lng
+                const startLat = (event.y1 + 34);    // RoboCup Y → Leaflet lat
+                
+                let endLng = null, endLat = null;
+                if (event.x2 !== null && event.y2 !== null) {
+                    endLng = (event.x2 + 52.5);  // RoboCup X → Leaflet lng
+                    endLat = (event.y2 + 34);    // RoboCup Y → Leaflet lat
+                }
+                
+                // チームに応じた色設定
+                let color = '#6c757d';
+                if (event.side1 === 'left') color = '#dc3545';
+                else if (event.side1 === 'right') color = '#007bff';
+                
+                // シーケンス番号ラベル (Leafletは[lat, lng]の順序)
+                const sequenceNumber = L.marker([startLat, startLng], {
+                    icon: L.divIcon({
+                        className: 'sequence-number-label',
+                        html: (index + 1).toString(),
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12]
+                    })
+                });
+                highlightedSequenceLayer.addLayer(sequenceNumber);
+                
+                // ハイライト開始点
+                const highlightStartMarker = L.circleMarker([startLat, startLng], {
+                    radius: 8,
+                    color: '#ffc107',
+                    fillColor: color,
+                    fillOpacity: 1,
+                    weight: 4,
+                    className: 'sequence-highlight'
+                });
+                highlightedSequenceLayer.addLayer(highlightStartMarker);
+                
+                // 移動線がある場合
+                if (endLat !== null && endLng !== null) {
+                    const highlightLine = L.polyline([[startLat, startLng], [endLat, endLng]], {
+                        color: '#ffc107',
+                        weight: 8,
+                        opacity: 0.9,
+                        className: 'sequence-highlight'
+                    });
+                    highlightedSequenceLayer.addLayer(highlightLine);
+                    
+                    // 元の色の線を上に重ねる
+                    const originalLine = L.polyline([[startLat, startLng], [endLat, endLng]], {
+                        color: color,
+                        weight: 4,
+                        opacity: 1
+                    });
+                    highlightedSequenceLayer.addLayer(originalLine);
+                    
+                    // ハイライト終了点
+                    const highlightEndMarker = L.circleMarker([endLat, endLng], {
+                        radius: 6,
+                        color: '#ffc107',
+                        fillColor: 'white',
+                        fillOpacity: 1,
+                        weight: 4,
+                        className: 'sequence-highlight'
+                    });
+                    highlightedSequenceLayer.addLayer(highlightEndMarker);
+                }
+            });
+            
+            // ハイライトレイヤーをマップに追加
+            map.addLayer(highlightedSequenceLayer);
+            
+            // 統計情報を更新
+            const infoPanel = document.getElementById('sequenceInfoPanel');
+            const team = sequence[0].side1;
+            const duration = sequence[sequence.length - 1].time1 - sequence[0].time1;
+            infoPanel.innerHTML = `🔗 Extracted ${sequence.length} events from ${team} team (${duration.toFixed(1)}s)`;
+            
+            // フィルタボタンを表示
+            showSequenceFilterButtons();
+        }
+        
+        // シーケンスフィルタボタンを表示
+        function showSequenceFilterButtons() {
+            document.getElementById('applySequenceFilterBtn').style.display = 'inline-block';
+            document.getElementById('clearSequenceFilterBtn').style.display = 'inline-block';
+        }
+        
+        // シーケンスフィルタボタンを非表示
+        function hideSequenceFilterButtons() {
+            document.getElementById('applySequenceFilterBtn').style.display = 'none';
+            document.getElementById('clearSequenceFilterBtn').style.display = 'none';
+        }
+        
+        // シーケンスフィルタを適用
+        function applySequenceFilter() {
+            if (!currentSequenceIds || currentSequenceIds.length === 0) {
+                alert('シーケンスが選択されていません');
+                return;
+            }
+            
+            // 隠しフィールドにシーケンスIDを設定
+            document.getElementById('sequence_ids').value = currentSequenceIds.join(',');
+            
+            // フォームを送信
+            document.getElementById('filterForm').submit();
+        }
+        
+        // シーケンスフィルタをクリア
+        function clearSequenceFilter() {
+            document.getElementById('sequence_ids').value = '';
+            
+            // URLからsequence_idsパラメータを削除して再読み込み
+            const url = new URL(window.location);
+            url.searchParams.delete('sequence_ids');
+            window.location.href = url.toString();
+        }
+        
+        // ページ読み込み完了後に確実にイベントを表示
+        window.addEventListener('load', function() {
+            console.log('🔄 Page loaded, ensuring events are displayed...');
+            
+            // 少し遅延を入れてマップの初期化完了を待つ
+            setTimeout(function() {
+                if (window.eventLayer && originalEvents.length > 0) {
+                    console.log('🎯 Displaying events from backend after page load');
+                    displayEvents();
+                    
+                    // デバッグ: マップ上のレイヤー数を確認
+                    const layerCount = window.eventLayer.getLayers().length;
+                    console.log(`📊 Event layer contains ${layerCount} items`);
+                    
+                    if (layerCount > 0) {
+                        console.log('✅ Events are being displayed on map successfully');
+                    } else {
+                        console.warn('⚠️ No events added to map - check displayEvents() function');
+                    }
+                } else {
+                    console.warn('⚠️ EventLayer not ready or no events available');
+                }
+            }, 500);
+        });
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+<h2>検索結果</h2>
+<ul>
+  {% for match in matches %}
+    <li>{{ match.datetime }}: {{ match.team1 }} {{ match.team1_score }} - {{ match.team2_score }} {{ match.team2 }}</li>
+  {% endfor %}
+</ul>
+<a href="/">戻る</a>

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大会・試合選択 - ChronoPitch</title>
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="mb-4">🏆 大会・試合選択</h1>
+        
+        <!-- 大会選択セクション -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h4 class="card-title mb-0">📅 大会一覧</h4>
+                    </div>
+                    <div class="card-body">
+                        {% if tournaments %}
+                            <div class="row">
+                                {% for tournament in tournaments %}
+                                <div class="col-md-4 mb-3">
+                                    <div class="card h-100 tournament-card" style="cursor: pointer;" 
+                                         onclick="selectTournament({{ tournament.id }})">
+                                        <div class="card-body">
+                                            <h5 class="card-title">{{ tournament.name }}</h5>
+                                            <p class="card-text">
+                                                <small class="text-muted">
+                                                    📅 {{ tournament.start_date.strftime('%Y-%m-%d') }} ~ {{ tournament.end_date.strftime('%Y-%m-%d') }}
+                                                </small><br>
+                                                <strong>{{ tournament.matches|length }} 試合</strong>
+                                            </p>
+                                        </div>
+                                        <div class="card-footer">
+                                            <small class="text-muted">{{ tournament.year }}年</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="alert alert-info">
+                                <h5>大会がまだ登録されていません</h5>
+                                <p>まず大会を登録してください。</p>
+                                <a href="{{ url_for('main.add_tournament') }}" class="btn btn-primary">大会を追加</a>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 試合選択セクション -->
+        <div class="row" id="matchesSection" style="display: none;">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h4 class="card-title mb-0">⚽ 試合一覧</h4>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="clearTournamentSelection()">
+                            ← 大会選択に戻る
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="matchesList">
+                            <!-- JavaScriptで動的に生成 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- ナビゲーション -->
+        <div class="row mt-4">
+            <div class="col-md-12 text-center">
+                <a href="{{ url_for('main.index') }}" class="btn btn-outline-primary me-2">🏠 ホーム</a>
+                <a href="{{ url_for('main.add_tournament') }}" class="btn btn-outline-success me-2">➕ 大会追加</a>
+                <a href="{{ url_for('main.interactive_gis_map') }}" class="btn btn-outline-info">🗺️ 全データGIS表示</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+    <script>
+        let selectedTournamentId = null;
+
+        // match_idからシミュレーション情報を抽出
+        function getSimulationInfo(matchId) {
+            try {
+                // 例: "0803-0011-aeteam2024-cyrus2024-0003-sim03.event" → "0003-sim03"
+                const parts = matchId.split('-');
+                if (parts.length >= 6) {
+                    const seqNumber = parts[parts.length - 2]; // 0003
+                    const simPart = parts[parts.length - 1].replace('.event', ''); // sim03
+                    return `${seqNumber}-${simPart}`;
+                }
+                // フォールバック: 最後の部分だけ取得
+                return matchId.split('-').pop().replace('.event', '');
+            } catch (e) {
+                return 'sim??';
+            }
+        }
+
+        // 大会選択処理
+        function selectTournament(tournamentId) {
+            selectedTournamentId = tournamentId;
+            
+            // 大会カードのハイライト
+            document.querySelectorAll('.tournament-card').forEach(card => {
+                card.classList.remove('border-primary', 'bg-light');
+            });
+            event.currentTarget.classList.add('border-primary', 'bg-light');
+            
+            // 試合一覧を取得して表示
+            fetchMatches(tournamentId);
+        }
+        
+        // 試合一覧取得
+        function fetchMatches(tournamentId) {
+            fetch(`/api/tournaments/${tournamentId}/matches`)
+                .then(response => response.json())
+                .then(matches => {
+                    displayMatches(matches);
+                })
+                .catch(error => {
+                    console.error('Error fetching matches:', error);
+                    showError('試合一覧の取得に失敗しました');
+                });
+        }
+        
+        // 試合一覧表示
+        function displayMatches(matches) {
+            const matchesList = document.getElementById('matchesList');
+            const matchesSection = document.getElementById('matchesSection');
+            
+            if (matches.length === 0) {
+                matchesList.innerHTML = `
+                    <div class="alert alert-warning">
+                        <h5>試合がまだ登録されていません</h5>
+                        <p>この大会にはまだ試合が登録されていません。</p>
+                    </div>
+                `;
+            } else {
+                let html = '<div class="row">';
+                matches.forEach(match => {
+                    const matchDate = match.date_time || 'Unknown';
+                    html += `
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card h-100 match-card" style="cursor: pointer;" 
+                                 onclick="selectMatch('${match.id}', '${match.match_id}')">
+                                <div class="card-body">
+                                    <h6 class="card-title">
+                                        ${match.team1} 
+                                        <span class="badge bg-secondary">vs</span>
+                                        ${match.team2}
+                                        <span class="badge bg-primary ms-2">${getSimulationInfo(match.match_id)}</span>
+                                    </h6>
+                                    <p class="card-text">
+                                        <small class="text-muted">
+                                            📅 ${matchDate}<br>
+                                            📊 ${match.event_count} イベント
+                                        </small><br>
+                                        <small class="text-primary">
+                                            🏷️ <strong>${match.match_id}</strong>
+                                        </small>
+                                    </p>
+                                </div>
+                                <div class="card-footer">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <small class="text-success">🖱️ クリックでGIS表示</small>
+                                        <small class="text-info">${getSimulationInfo(match.match_id)}</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                matchesList.innerHTML = html;
+            }
+            
+            matchesSection.style.display = 'block';
+            matchesSection.scrollIntoView({ behavior: 'smooth' });
+        }
+        
+        // 試合選択してGISページへ
+        function selectMatch(matchId, matchIdString) {
+            // CSVベースのmatch_idはそのまま使用（.event拡張子付き）
+            const correctedMatchId = matchIdString;
+            
+            // Interactive GIS Mapページにmatch_idパラメータ付きでリダイレクト
+            window.location.href = `{{ url_for('main.interactive_gis_map') }}?match_id=${encodeURIComponent(correctedMatchId)}`;
+        }
+        
+        // 大会選択をクリア
+        function clearTournamentSelection() {
+            selectedTournamentId = null;
+            document.getElementById('matchesSection').style.display = 'none';
+            document.querySelectorAll('.tournament-card').forEach(card => {
+                card.classList.remove('border-primary', 'bg-light');
+            });
+        }
+        
+        // エラー表示
+        function showError(message) {
+            const matchesList = document.getElementById('matchesList');
+            matchesList.innerHTML = `
+                <div class="alert alert-danger">
+                    <h5>エラー</h5>
+                    <p>${message}</p>
+                </div>
+            `;
+            document.getElementById('matchesSection').style.display = 'block';
+        }
+    </script>
+    
+    <style>
+        .tournament-card:hover, .match-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transition: all 0.3s ease;
+        }
+        
+        .tournament-card.border-primary {
+            border-width: 2px !important;
+        }
+        
+        .match-card {
+            min-height: 200px;
+        }
+        
+        .match-card .card-text {
+            word-break: break-all;
+            line-height: 1.3;
+        }
+        
+        .match-card .card-footer small {
+            font-size: 0.75em;
+        }
+    </style>
+</body>
+</html>

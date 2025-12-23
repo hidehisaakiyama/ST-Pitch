@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>連続イベント検索結果</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+    }
+    .sequence {
+      border: 1px solid #ccc;
+      padding: 10px;
+      margin-bottom: 20px;
+      background-color: #f9f9f9;
+    }
+    .sequence h3 {
+      margin-top: 0;
+    }
+    ul {
+      padding-left: 20px;
+    }
+    li {
+      margin-bottom: 5px;
+    }
+    .back-link {
+      margin-top: 20px;
+      display: inline-block;
+    }
+    canvas {
+      border: 1px solid #000;
+      background-color: #eafbe9;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>チーム「{{ team }}」の連続イベント検索結果</h1>
+
+  {% if sequences %}
+    {% for seq in sequences %}
+      <div class="sequence">
+        <h3>イベントシーケンス（{{ seq|length }} 件）</h3>
+        <ul>
+          {% for e in seq %}
+            <li>
+              {{ e.time1 }}秒：
+              {{ e.type }}、
+              Side1: {{ e.side1 }}, Unum1: {{ e.unum1 }}、
+              座標1: ({{ e.x1 }}, {{ e.y1 }}) →
+              Side2: {{ e.side2 }}, Unum2: {{ e.unum2 }}、
+              座標2: ({{ e.x2 }}, {{ e.y2 }})（{{ e.time2 }}秒）、
+              Mode1: {{ e.mode1 }}
+            </li>
+          {% endfor %}
+        </ul>
+
+        <canvas width="700" height="453" class="field-canvas"
+          data-points='{{ seq | tojson }}'></canvas>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p>該当する連続イベントが見つかりませんでした。</p>
+  {% endif %}
+
+  <a class="back-link" href="{{ url_for('main.index') }}">← 戻る</a>
+
+<script>
+  document.querySelectorAll('.field-canvas').forEach(canvas => {
+    const ctx = canvas.getContext('2d');
+    const fieldX = 52.5;  // 半分で105m
+    const fieldY = 34;    // 半分で68m
+    const data = JSON.parse(canvas.dataset.points);
+
+    const fieldToCanvasX = x => (x + fieldX) / (fieldX * 2) * canvas.width;
+    const fieldToCanvasY = y => (fieldY - y) / (fieldY * 2) * canvas.height;
+
+    // フィールド描画
+    ctx.fillStyle = '#eafbe9';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = "#999";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, 0, canvas.width, canvas.height); // 外枠
+
+    // ハーフライン
+    ctx.beginPath();
+    ctx.moveTo(canvas.width / 2, 0);
+    ctx.lineTo(canvas.width / 2, canvas.height);
+    ctx.stroke();
+
+    // センターサークル
+    ctx.beginPath();
+    ctx.arc(canvas.width / 2, canvas.height / 2, 60, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    // イベント描画
+    for (let i = 0; i < data.length; i++) {
+      const e = data[i];
+      const x1 = fieldToCanvasX(e.x1);
+      const y1 = fieldToCanvasY(e.y1);
+      const x2 = fieldToCanvasX(e.x2);
+      const y2 = fieldToCanvasY(e.y2);
+
+      // 線分（矢印）
+      ctx.strokeStyle = "orange";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+
+      // 始点は常に青
+      ctx.fillStyle = "blue";
+      ctx.beginPath();
+      ctx.arc(x1, y1, 4, 0, 2 * Math.PI);
+      ctx.fill();
+
+      // 終点がボールロスト（e.side2 ≠ e.side1）なら赤、それ以外は青
+      if (e.side2 !== e.side1) {
+        ctx.fillStyle = "red";
+      } else {
+        ctx.fillStyle = "blue";
+      }
+      ctx.beginPath();
+      ctx.arc(x2, y2, 4, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+  });
+</script>
+
+</body>
+</html>

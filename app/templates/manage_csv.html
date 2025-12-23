@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV管理 - ChronoPitch</title>
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+</head>
+<body>
+<div class="container mt-4">
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{% if category == 'error' %}danger{% else %}{{ category }}{% endif %} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- ヘッダー -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="h2">📂 CSVファイル管理</h1>
+                    <p class="text-muted">登録済みのイベントデータを管理・削除できます</p>
+                </div>
+                <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">
+                    🏠 トップページに戻る
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 登録済みイベントデータ -->
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">📋 登録済みイベントデータ</h5>
+                    {% if match_data %}
+                    <span class="badge bg-primary">{{ match_data|length }} 件</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    {% if match_data %}
+                        <div class="alert alert-info mb-3">
+                            <strong>⏱️ データ取得時間: {{ processing_time }}秒</strong> | 
+                            <strong>📊 登録データ: {{ match_data|length }}試合分</strong>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th style="width: 60%">Match ID</th>
+                                        <th style="width: 20%">イベント数</th>
+                                        <th style="width: 20%">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for match in match_data %}
+                                    <tr>
+                                        <td>
+                                            <code class="text-primary">{{ match.match_id }}</code>
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-info">{{ match.event_count }}</span>
+                                        </td>
+                                        <td>
+                                            <form method="post" action="{{ url_for('main.delete_match_events') }}" style="display:inline;">
+                                                <input type="hidden" name="match_id" value="{{ match.match_id }}">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" 
+                                                        onclick="return confirm('{{ match.match_id }}のイベントデータ（{{ match.event_count }}件）を完全に削除しますか？\n\nこの操作は元に戻せません。');">
+                                                    🗑️ 削除
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- 一括削除ボタン -->
+                        <div class="mt-4 pt-3 border-top">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="text-danger">⚠️ 危険な操作</h6>
+                                    <small class="text-muted">すべてのイベントデータを一度に削除します</small>
+                                </div>
+                                <form method="post" action="{{ url_for('main.delete_all_events') }}" style="display:inline;">
+                                    <button type="submit" class="btn btn-danger" 
+                                            onclick="return confirm('⚠️ 警告\n\nすべてのイベントデータ（{{ match_data|length }}件のmatch_id）を完全に削除しますか？\n\nこの操作は元に戻せません！');">
+                                        🗑️ 全データ削除
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info">
+                            <div class="d-flex align-items-center">
+                                <div class="me-3">
+                                    <i class="fas fa-info-circle fa-2x"></i>
+                                </div>
+                                <div>
+                                    <h6 class="alert-heading">データがありません</h6>
+                                    <p class="mb-0">まだイベントデータがアップロードされていません。</p>
+                                    <small class="text-muted">
+                                        <a href="{{ url_for('main.index') }}" class="alert-link">トップページ</a>からCSVファイルをアップロードしてください。
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+</body>
+</html>

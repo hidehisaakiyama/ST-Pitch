@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ tournament.name }} - 試合追加</title>
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+</head>
+<body>
+<div class="container mt-4">
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{% if category == 'error' %}danger{% else %}{{ category }}{% endif %} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- ヘッダー -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h1 class="mb-0">➕ {{ tournament.name }} - 試合追加</h1>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>📅 年:</strong> {{ tournament.year }}</p>
+                            <p class="mb-1"><strong>📆 期間:</strong> {{ tournament.start_date.strftime('%Y-%m-%d') }} 〜 {{ tournament.end_date.strftime('%Y-%m-%d') }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="mb-1"><strong>🎯 現在の登録試合数:</strong> {{ registered_count }} 試合</p>
+                            <p class="mb-0"><strong>🆕 追加可能な試合:</strong> {{ available_matches|length }} 試合</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 操作ボタン -->
+    <div class="row mb-3">
+        <div class="col-md-12">
+            <a href="{{ url_for('main.view_tournament', tournament_id=tournament.id) }}" class="btn btn-secondary">
+                ← 大会詳細に戻る
+            </a>
+        </div>
+    </div>
+
+    {% if available_matches %}
+    <form method="POST">
+        <!-- 送信ボタン -->
+        <div class="row mb-3">
+            <div class="col-md-12 text-center">
+                <button type="submit" class="btn btn-primary btn-lg">
+                    ✅ 選択した試合を大会に追加
+                </button>
+                <p class="text-muted mt-2 mb-0">
+                    <small>下の一覧から試合を選択して、上のボタンで追加してください</small>
+                </p>
+            </div>
+        </div>
+
+        <!-- 試合選択 -->
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">🏆 追加可能な試合一覧</h5>
+                            <div>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selectAll()">全選択</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selectNone()">全解除</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            {% for match in available_matches|sort(attribute='match_id') %}
+                            <div class="col-md-6 col-lg-4 mb-3">
+                                <div class="form-check p-3 border rounded">
+                                    <input class="form-check-input" type="checkbox" name="selected_matches" value="{{ match.match_id }}" id="match_{{ loop.index }}">
+                                    <label class="form-check-label w-100" for="match_{{ loop.index }}">
+                                        <div class="d-flex justify-content-between">
+                                            <strong>{{ match.display_name }}</strong>
+                                            <span class="badge bg-info">{{ match.event_count }} イベント</span>
+                                        </div>
+                                        <small class="text-muted">
+                                            📅 {{ match.date_time }}<br>
+                                            📄 {{ match.match_id }}
+                                        </small>
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+    {% else %}
+    <!-- 試合がない場合 -->
+    <div class="row">
+        <div class="col-md-12">
+            <div class="alert alert-info text-center">
+                <h4>📭 追加可能な試合がありません</h4>
+                <p>全ての利用可能な試合が既にこの大会に登録されているか、CSVデータがアップロードされていません。</p>
+                <a href="{{ url_for('main.upload_event_csv') }}" class="btn btn-outline-primary">
+                    📤 CSVデータをアップロード
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- JavaScript -->
+<script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+<script>
+function selectAll() {
+    const checkboxes = document.querySelectorAll('input[name="selected_matches"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = true;
+    });
+}
+
+function selectNone() {
+    const checkboxes = document.querySelectorAll('input[name="selected_matches"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = false;
+    });
+}
+</script>
+</body>
+</html>
