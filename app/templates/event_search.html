@@ -247,6 +247,12 @@
   <div style="background-color: #f0f8ff; padding: 10px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #0066cc;">
     <strong>⏱️ 検索処理時間: {{ processing_time }}秒</strong> | 
     <strong>📊 検索結果: {{ events_by_match|length }}試合</strong>
+    <div style="float: right;">
+      <button type="button" onclick="downloadEventSearchCSV()" style="background-color: #28a745; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">
+        📄 CSV Download
+      </button>
+    </div>
+    <div style="clear: both;"></div>
   </div>
   {% for match_id, events in events_by_match.items() %}
     <h2>Match ID: {{ match_id }}</h2>
@@ -359,6 +365,35 @@
 <form method="POST" action="{{ url_for('main.delete_all_events') }}" onsubmit="return confirm('本当にすべてのイベントを削除しますか？');">
     <button type="submit" style="background-color: red; color: white;">全イベントデータ削除</button>
 </form>
+
+<script>
+// CSVダウンロード機能（event_search用）
+function downloadEventSearchCSV() {
+    console.log('📄 Initiating event search CSV download...');
+    
+    // 現在のURL検索パラメータを取得
+    const currentUrl = new URL(window.location.href);
+    const searchParams = currentUrl.searchParams;
+    
+    // CSVダウンロード用のURLを構築
+    const csvUrl = new URL('{{ url_for("main.download_event_search_csv") }}', window.location.origin);
+    
+    // 全ての検索パラメータをCSVダウンロードURLに追加
+    searchParams.forEach((value, key) => {
+        // ページネーション用のパラメータは除外
+        if (key !== 'page') {
+            csvUrl.searchParams.append(key, value);
+        }
+    });
+    
+    console.log('📄 Event search CSV download URL:', csvUrl.toString());
+    
+    // ダウンロードを実行
+    window.location.href = csvUrl.toString();
+    
+    console.log('📄 Event search CSV download initiated');
+}
+</script>
 <a class="back-link" href="{{ url_for('main.index') }}">← 戻る</a>
 </body>
 </html>

@@ -83,6 +83,114 @@
             bottom: 80px;
             left: 10px;
             z-index: 1000;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            max-width: 280px;
+        }
+        
+        /* レスポンシブ対応：Legendの位置調整 */
+        @media (max-width: 1200px) {
+            .legend {
+                font-size: 13px;
+                max-width: 250px;
+                bottom: 70px;
+            }
+        }
+        
+        @media (max-width: 992px) {
+            .legend {
+                font-size: 12px;
+                max-width: 220px;
+                bottom: 60px;
+                left: 5px;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .legend {
+                position: static;  /* 絶対配置を解除 */
+                margin: 10px 0;
+                width: 100%;
+                max-width: none;
+                font-size: 12px;
+                /* モバイルでは通常の要素として配置 */
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .legend {
+                padding: 8px;
+                font-size: 11px;
+            }
+            .legend small {
+                font-size: 10px;
+            }
+        }
+        
+        /* Legend toggle button */
+        .legend-toggle {
+            border: none;
+            padding: 4px 8px;
+            font-size: 14px;
+            line-height: 1;
+            font-weight: bold;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+            color: #495057;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 30px;
+        }
+        
+        .legend-toggle:hover {
+            background-color: #e9ecef;
+            transform: scale(1.1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .legend-toggle:active {
+            transform: scale(0.95);
+        }
+        
+        .legend-content {
+            transition: all 0.3s ease-in-out;
+            overflow: hidden;
+            opacity: 1;
+            max-height: 200px;
+        }
+        
+        .legend-content.collapsed {
+            max-height: 0;
+            opacity: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        
+        .legend-header {
+            cursor: pointer;
+        }
+        
+        /* PCでの表示調整 */
+        @media (min-width: 768px) {
+            .legend-toggle {
+                font-size: 16px;
+                padding: 6px 10px;
+            }
+            
+            .legend {
+                min-width: 300px;
+            }
+        }
+        
+        /* 折りたたみアニメーションの改善 */
+        .legend.collapsed .legend-content {
+            max-height: 0;
+            opacity: 0;
+            padding: 0;
+            margin: 0;
         }
         .team-left { 
             color: #dc3545 !important; 
@@ -600,6 +708,24 @@
             </div>
         </div>
         
+        <!-- CSVダウンロード -->
+        {% if total_events and total_events > 0 %}
+        <div class="row mb-3">
+            <div class="col-md-12 d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="mb-0">📊 Data Export</h5>
+                    <small class="text-muted">Download current search results as CSV file (all {{ total_events }} events)</small>
+                </div>
+                <div>
+                    <button type="button" class="btn btn-success" id="downloadCsvBtn" onclick="downloadSearchResultsCSV()">
+                        <i class="fas fa-download"></i> 📄 Download CSV
+                        <span class="badge bg-light text-dark ms-1">{{ total_events }} events</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        
         <!-- マップコンテナ -->
         <div class="map-container">
             <div id="map"></div>
@@ -640,16 +766,36 @@
             </div>
             
             <!-- 凡例 -->
-            <div class="legend">
-                <h6>Legend</h6>
-                <div><span class="team-left">●</span> Left Team</div>
-                <div><span class="team-right">●</span> Right Team</div>
-                <div><span class="team-neutral">●</span> Neutral/Other</div>
-                <hr style="margin: 8px 0;">
-                <small>📍 Draw shapes (rectangles/circles/polygons)<br>
-                🔍 <strong>Click 🔍 Search button to apply filters</strong><br>
-                🎯 Multiple shapes = OR search<br>
-                🗑️ Use clear button to remove shapes</small>
+            <div class="legend" id="legend">
+                <div class="legend-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">Legend</h6>
+                    <button class="btn btn-sm btn-outline-secondary legend-toggle" id="legendToggle" onclick="toggleLegend()" title="クリックで凡例を表示/非表示">
+                        <span id="legendToggleIcon">−</span>
+                    </button>
+                </div>
+                <div class="legend-content" id="legendContent">
+                    <div class="mt-2"><span class="team-left">●</span> Left Team</div>
+                    <div><span class="team-right">●</span> Right Team</div>
+                    <div><span class="team-neutral">●</span> Neutral/Other</div>
+                    <hr style="margin: 8px 0;">
+                    <small>📍 Draw shapes (rectangles/circles/polygons)<br>
+                    🔍 <strong>Click 🔍 Search button to apply filters</strong><br>
+                    🎯 Multiple shapes = OR search<br>
+                    🗑️ Use clear button to remove shapes</small>
+                </div>
+            </div>
+            
+            <!-- モバイル用の説明パネル（デスクトップでは非表示） -->
+            <div class="mobile-help-panel d-md-none" style="position: absolute; top: 10px; left: 10px; right: 10px; background: rgba(255,255,255,0.95); padding: 8px; border-radius: 5px; font-size: 12px; z-index: 999; display: none;" id="mobileHelp">
+                <div class="d-flex justify-content-between align-items-center">
+                    <strong>📱 モバイル操作ヘルプ</strong>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="toggleMobileHelp()" style="font-size: 10px; padding: 2px 6px;">×</button>
+                </div>
+                <div class="mt-2">
+                    • <strong>Legend</strong>: 下の「−」ボタンで表示切替<br>
+                    • <strong>図形描画</strong>: 左上のツールを使用<br>
+                    • <strong>検索実行</strong>: 🔍ボタンをタップ
+                </div>
             </div>
         </div>
         
@@ -2711,6 +2857,94 @@
             }, 500);
         });
 
+        
+        // CSVダウンロード機能
+        function downloadSearchResultsCSV() {
+            console.log('📄 Initiating CSV download...');
+            
+            // 現在のURL検索パラメータを取得
+            const currentUrl = new URL(window.location.href);
+            const searchParams = currentUrl.searchParams;
+            
+            // CSVダウンロード用のURLを構築
+            const csvUrl = new URL('{{ url_for("main.download_search_results_csv") }}', window.location.origin);
+            
+            // 全ての検索パラメータをCSVダウンロードURLに追加
+            searchParams.forEach((value, key) => {
+                csvUrl.searchParams.append(key, value);
+            });
+            
+            // ダウンロードボタンを無効化（ダウンロード中の表示）
+            const downloadBtn = document.getElementById('downloadCsvBtn');
+            const originalText = downloadBtn.innerHTML;
+            downloadBtn.disabled = true;
+            downloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Generating CSV...';
+            
+            console.log('📄 CSV download URL:', csvUrl.toString());
+            
+            // ダウンロードを実行
+            window.location.href = csvUrl.toString();
+            
+            // ボタンを元に戻す（少し遅延を入れる）
+            setTimeout(function() {
+                downloadBtn.disabled = false;
+                downloadBtn.innerHTML = originalText;
+                console.log('📄 CSV download completed');
+            }, 2000);
+        }
+        
+        // Legend toggle function for all devices (PC and mobile)
+        function toggleLegend() {
+            const legendContent = document.getElementById('legendContent');
+            const legendToggleIcon = document.getElementById('legendToggleIcon');
+            
+            if (legendContent.classList.contains('collapsed')) {
+                legendContent.classList.remove('collapsed');
+                legendToggleIcon.textContent = '−';
+                console.log('📋 Legend expanded');
+            } else {
+                legendContent.classList.add('collapsed');
+                legendToggleIcon.textContent = '+';
+                console.log('📋 Legend collapsed');
+            }
+        }
+        
+        // Mobile help panel toggle function
+        function toggleMobileHelp() {
+            const mobileHelp = document.getElementById('mobileHelp');
+            if (mobileHelp) {
+                mobileHelp.style.display = mobileHelp.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+        
+        // Show mobile help on page load (mobile devices only)
+        document.addEventListener('DOMContentLoaded', function() {
+            // PCでも凡例のホバー効果を追加
+            const legendHeader = document.querySelector('.legend-header');
+            if (legendHeader) {
+                legendHeader.addEventListener('mouseenter', function() {
+                    if (window.innerWidth >= 768) { // PC画面サイズの場合
+                        this.style.backgroundColor = 'rgba(0,0,0,0.05)';
+                    }
+                });
+                legendHeader.addEventListener('mouseleave', function() {
+                    this.style.backgroundColor = '';
+                });
+            }
+            
+            // モバイルヘルプの表示制御
+            if (window.innerWidth <= 768) {
+                const mobileHelp = document.getElementById('mobileHelp');
+                if (mobileHelp) {
+                    // Show help panel for 5 seconds, then auto-hide
+                    mobileHelp.style.display = 'block';
+                    setTimeout(function() {
+                        mobileHelp.style.display = 'none';
+                    }, 5000);
+                }
+            }
+        });
+        
     </script>
 </body>
 </html>

@@ -1,8 +1,10 @@
 import csv
 import json
+import math
 import os
 import time
-from flask import Blueprint, render_template, request, redirect, url_for, current_app, jsonify, flash
+from io import StringIO
+from flask import Blueprint, render_template, request, redirect, url_for, current_app, jsonify, flash, Response
 from .models import db, MatchResult, EventData
 from sqlalchemy import text, func, or_, and_
 from geoalchemy2.functions import ST_Contains, ST_Intersects, ST_DWithin
@@ -1167,6 +1169,459 @@ def interactive_gis_map():
                            sequence_ids=request.args.get("sequence_ids", ""),
                            rects_json=request.args.get("rects_json", ""),
                            processing_time=processing_time)
+
+@main.route('/download_search_results_csv')
+def download_search_results_csv():
+    """検索結果をCSVファイルとしてダウンロード"""
+    from datetime import datetime
+    start_time = time.time()
+    
+    # interactive_gis_map関数と同じフィルタロジックを使用してクエリを構築
+    query = db.session.query(EventData)
+    
+    # 基本フィルタ処理
+    event_type = request.args.get("event_type")
+    if event_type:
+        query = query.filter(EventData.type == event_type)
+    
+    team = request.args.get("team")
+    if team:
+        query = query.filter(EventData.side1 == team)
+    
+    unum = request.args.get("unum")
+    if unum:
+        query = query.filter(EventData.unum1 == unum)
+    
+    match_id = request.args.get("match_id")
+    if match_id:
+        query = query.filter(EventData.match_id == match_id)
+    
+    success = request.args.get("success")
+    if success:
+        if success == "true":
+            query = query.filter(EventData.success == True)
+        elif success == "false":
+            query = query.filter(EventData.success == False)
+    
+    # 時間範囲フィルタ
+    min_time = request.args.get("min_time")
+    if min_time:
+        try:
+            min_time_val = float(min_time)
+            query = query.filter(EventData.time1 >= min_time_val)
+        except ValueError:
+            pass
+    
+    max_time = request.args.get("max_time")
+    if max_time:
+        try:
+            max_time_val = float(max_time)
+            query = query.filter(EventData.time1 <= max_time_val)
+        except ValueError:
+            pass
+    
+    # 座標範囲フィルタ（矩形範囲）
+    rect_xmin = request.args.get("rect_xmin")
+    rect_xmax = request.args.get("rect_xmax")
+    rect_ymin = request.args.get("rect_ymin")
+    rect_ymax = request.args.get("rect_ymax")
+    
+    if rect_xmin and rect_xmax and rect_ymin and rect_ymax:
+        try:
+            query = query.filter(
+                EventData.x1 >= float(rect_xmin),
+                EventData.x1 <= float(rect_xmax),
+                EventData.y1 >= float(rect_ymin),
+                EventData.y1 <= float(rect_ymax)
+            )
+        except ValueError:
+            pass
+    
+    # 空間検索フィルタ（図形描画）
+    shape_type = request.args.get("shape_type")
+    shape_data = request.args.get("shape_data")
+    
+    if shape_type and shape_data:
+        try:
+            shape_info = json.loads(shape_data)
+            
+            if shape_type == 'circle':
+                # 円の範囲検索
+                center_lng = shape_info['center']['x']
+                center_lat = shape_info['center']['y']
+                radius = shape_info['radius']
+                
+                # 座標変換: フロントエンドのマップ座標 → RoboCup座標
+                robocup_x = center_lng - 52.5
+                robocup_y = center_lat - 34
+                
+                # SQL条件で円の範囲をフィルタ
+                distance_condition = func.sqrt(
+                    func.pow(EventData.x1 - robocup_x, 2) + 
+                    func.pow(EventData.y1 - robocup_y, 2)
+                ) <= radius
+                
+                query = query.filter(distance_condition)
+                
+            elif shape_type == 'rectangle':
+                # 矩形の範囲検索
+                bounds = shape_info['bounds']
+                
+                # 座標変換: マップ座標 → RoboCup座標
+                robocup_x_west = bounds['west'] - 52.5
+                robocup_x_east = bounds['east'] - 52.5
+                robocup_y_south = bounds['south'] - 34
+                robocup_y_north = bounds['north'] - 34
+                
+                query = query.filter(
+                    EventData.x1 >= robocup_x_west,
+                    EventData.x1 <= robocup_x_east,
+                    EventData.y1 >= robocup_y_south,
+                    EventData.y1 <= robocup_y_north
+                )
+                
+            elif shape_type == 'polygon':
+                # 多角形の範囲検索（簡易実装：境界ボックス内に限定）
+                coordinates = shape_info['coordinates']
+                if coordinates:
+                    map_lng_coords = [coord['x'] for coord in coordinates]
+                    map_lat_coords = [coord['y'] for coord in coordinates]
+                    
+                    robocup_x_coords = [lng - 52.5 for lng in map_lng_coords]
+                    robocup_y_coords = [lat - 34 for lat in map_lat_coords]
+                    
+                    min_x, max_x = min(robocup_x_coords), max(robocup_x_coords)
+                    min_y, max_y = min(robocup_y_coords), max(robocup_y_coords)
+                    
+                    query = query.filter(
+                        EventData.x1 >= min_x,
+                        EventData.x1 <= max_x,
+                        EventData.y1 >= min_y,
+                        EventData.y1 <= max_y
+                    )
+                    
+            elif shape_type == 'multiple':
+                # 複数図形の処理
+                if isinstance(shape_info, list):
+                    shape_filters = []
+                    for shape in shape_info:
+                        shape_filter_conditions = []
+                        
+                        if shape['type'] == 'circle':
+                            center = shape['data']['center']
+                            radius = shape['data']['radius']
+                            
+                            robocup_center_x = center['x'] - 52.5
+                            robocup_center_y = center['y'] - 34
+                            
+                            shape_filter_conditions.append(
+                                func.sqrt(
+                                    func.power(EventData.x1 - robocup_center_x, 2) +
+                                    func.power(EventData.y1 - robocup_center_y, 2)
+                                ) <= radius
+                            )
+                        elif shape['type'] == 'rectangle':
+                            bounds = shape['data']['bounds']
+                            robocup_x_west = bounds['west'] - 52.5
+                            robocup_x_east = bounds['east'] - 52.5
+                            robocup_y_south = bounds['south'] - 34
+                            robocup_y_north = bounds['north'] - 34
+                            
+                            shape_filter_conditions.append(and_(
+                                EventData.x1 >= robocup_x_west,
+                                EventData.x1 <= robocup_x_east,
+                                EventData.y1 >= robocup_y_south,
+                                EventData.y1 <= robocup_y_north
+                            ))
+                        elif shape['type'] == 'polygon':
+                            coordinates = shape['data']['coordinates']
+                            if coordinates:
+                                map_lng_coords = [coord['x'] for coord in coordinates]
+                                map_lat_coords = [coord['y'] for coord in coordinates]
+                                robocup_x_coords = [lng - 52.5 for lng in map_lng_coords]
+                                robocup_y_coords = [lat - 34 for lat in map_lat_coords]
+                                min_x, max_x = min(robocup_x_coords), max(robocup_x_coords)
+                                min_y, max_y = min(robocup_y_coords), max(robocup_y_coords)
+                                
+                                shape_filter_conditions.append(and_(
+                                    EventData.x1 >= min_x,
+                                    EventData.x1 <= max_x,
+                                    EventData.y1 >= min_y,
+                                    EventData.y1 <= max_y
+                                ))
+                        
+                        if shape_filter_conditions:
+                            shape_filters.extend(shape_filter_conditions)
+                    
+                    if shape_filters:
+                        query = query.filter(or_(*shape_filters))
+                    
+        except Exception as e:
+            print(f"空間検索の処理エラー: {e}")
+
+    # シーケンスフィルタ処理
+    sequence_ids = request.args.get('sequence_ids')
+    if sequence_ids:
+        try:
+            sequence_id_list = [int(id.strip()) for id in sequence_ids.split(',') if id.strip()]
+            if sequence_id_list:
+                query = query.filter(EventData.id.in_(sequence_id_list))
+        except Exception as e:
+            print(f"シーケンスフィルタの処理エラー: {e}")
+
+    # 複数矩形範囲処理（下位互換として保持）
+    rects_json = request.args.get("rects_json")
+    if rects_json:
+        try:
+            rects = json.loads(rects_json)
+            rect_filters = []
+            for r in rects:
+                rect_filters.append(and_(
+                    EventData.x1 >= r['x_min'],
+                    EventData.x1 <= r['x_max'],
+                    EventData.y1 >= r['y_min'],
+                    EventData.y1 <= r['y_max']
+                ))
+            if rect_filters:
+                query = query.filter(or_(*rect_filters))
+        except Exception as e:
+            print("矩形フィルタの処理エラー:", e)
+
+    # データを取得（制限なし - 全件取得）
+    events = query.order_by(EventData.match_id, EventData.time1).all()
+    
+    # CSVファイルを作成
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # CSVヘッダー
+    headers = [
+        'Type1', 'Side1', 'Unum1', 'Time1', 'Mode1', 'X1', 'Y1', 
+        'Side2', 'Unum2', 'Time2', 'X2', 'Y2', 'Success', 'match_id'
+    ]
+    writer.writerow(headers)
+    
+    # データ行
+    for event in events:
+        writer.writerow([
+            event.type,
+            event.side1,
+            event.unum1 if event.unum1 is not None else '',
+            event.time1,
+            event.mode1 if event.mode1 else '',
+            event.x1,
+            event.y1,
+            event.side2 if event.side2 else '',
+            event.unum2 if event.unum2 is not None else '',
+            event.time2 if event.time2 is not None else '',
+            event.x2 if event.x2 is not None else '',
+            event.y2 if event.y2 is not None else '',
+            event.success if event.success is not None else '',
+            event.match_id
+        ])
+    
+    # ファイル名を生成（日時とフィルタ情報を含む）
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename_parts = [f"search_results_{timestamp}"]
+    
+    # フィルタ情報をファイル名に追加
+    if event_type:
+        filename_parts.append(f"type_{event_type}")
+    if team:
+        filename_parts.append(f"team_{team}")
+    if match_id:
+        filename_parts.append(f"match_{match_id}")
+    if min_time or max_time:
+        time_info = f"time_{min_time or '0'}-{max_time or 'inf'}"
+        filename_parts.append(time_info)
+    if shape_type:
+        filename_parts.append(f"spatial_{shape_type}")
+    if sequence_ids:
+        filename_parts.append("sequence_filtered")
+    
+    filename = "_".join(filename_parts) + ".csv"
+    filename = filename.replace(" ", "_")  # スペースをアンダースコアに置換
+    
+    # レスポンスを作成
+    output.seek(0)
+    processing_time = round(time.time() - start_time, 3)
+    
+    response = Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={"Content-disposition": f"attachment; filename={filename}"}
+    )
+    
+    print(f"📄 CSV exported: {len(events)} events in {processing_time}s -> {filename}")
+    return response
+
+@main.route('/download_event_search_csv')
+def download_event_search_csv():
+    """通常の検索結果をCSVファイルとしてダウンロード"""
+    from datetime import datetime
+    start_time = time.time()
+    
+    # event_search関数と同じフィルタロジックを使用してクエリを構築
+    query = db.session.query(EventData)
+    
+    # 基本フィルタ処理
+    event_type = request.args.get("event_type")
+    if event_type:
+        query = query.filter(EventData.type == event_type)
+    
+    team = request.args.get("team")
+    if team:
+        query = query.filter(EventData.side1 == team)
+    
+    unum = request.args.get("unum")
+    if unum:
+        try:
+            query = query.filter(EventData.unum1 == int(unum))
+        except ValueError:
+            pass
+    
+    match_id = request.args.get("match_id")
+    if match_id and match_id != "all":
+        query = query.filter(EventData.match_id == match_id)
+    
+    success = request.args.get("success")
+    if success:
+        if success == "true":
+            query = query.filter(EventData.success == True)
+        elif success == "false":
+            query = query.filter(EventData.success == False)
+    
+    mode = request.args.get("mode")
+    if mode:
+        query = query.filter(EventData.mode1 == mode)
+    
+    # 時間範囲フィルタ
+    min_time1 = request.args.get("min_time1")
+    if min_time1:
+        try:
+            min_time_val = float(min_time1)
+            query = query.filter(EventData.time1 >= min_time_val)
+        except ValueError:
+            pass
+    
+    max_time1 = request.args.get("max_time1")
+    if max_time1:
+        try:
+            max_time_val = float(max_time1)
+            query = query.filter(EventData.time1 <= max_time_val)
+        except ValueError:
+            pass
+    
+    # 座標範囲フィルタ
+    x_min = request.args.get("x_min")
+    if x_min:
+        try:
+            query = query.filter(EventData.x1 >= float(x_min))
+        except ValueError:
+            pass
+    
+    x_max = request.args.get("x_max")
+    if x_max:
+        try:
+            query = query.filter(EventData.x1 <= float(x_max))
+        except ValueError:
+            pass
+    
+    y_min = request.args.get("y_min")
+    if y_min:
+        try:
+            query = query.filter(EventData.y1 >= float(y_min))
+        except ValueError:
+            pass
+    
+    y_max = request.args.get("y_max")
+    if y_max:
+        try:
+            query = query.filter(EventData.y1 <= float(y_max))
+        except ValueError:
+            pass
+    
+    # 複数矩形範囲処理
+    rects_json = request.args.get("rects_json")
+    if rects_json:
+        try:
+            rects = json.loads(rects_json)
+            rect_filters = []
+            for r in rects:
+                rect_filters.append(and_(
+                    EventData.x1 >= r['x_min'],
+                    EventData.x1 <= r['x_max'],
+                    EventData.y1 >= r['y_min'],
+                    EventData.y1 <= r['y_max']
+                ))
+            if rect_filters:
+                query = query.filter(or_(*rect_filters))
+        except Exception as e:
+            print("矩形フィルタの処理エラー:", e)
+    
+    # データを取得（制限なし）
+    events = query.order_by(EventData.match_id, EventData.time1).all()
+    
+    # CSVファイルを作成
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # CSVヘッダー
+    headers = [
+        'Type1', 'Side1', 'Unum1', 'Time1', 'Mode1', 'X1', 'Y1', 
+        'Side2', 'Unum2', 'Time2', 'X2', 'Y2', 'Success', 'match_id'
+    ]
+    writer.writerow(headers)
+    
+    # データ行
+    for event in events:
+        writer.writerow([
+            event.type,
+            event.side1,
+            event.unum1 if event.unum1 is not None else '',
+            event.time1,
+            event.mode1 if event.mode1 else '',
+            event.x1,
+            event.y1,
+            event.side2 if event.side2 else '',
+            event.unum2 if event.unum2 is not None else '',
+            event.time2 if event.time2 is not None else '',
+            event.x2 if event.x2 is not None else '',
+            event.y2 if event.y2 is not None else '',
+            event.success if event.success is not None else '',
+            event.match_id
+        ])
+    
+    # ファイル名を生成
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename_parts = [f"event_search_results_{timestamp}"]
+    
+    # フィルタ情報をファイル名に追加
+    if event_type:
+        filename_parts.append(f"type_{event_type}")
+    if team:
+        filename_parts.append(f"team_{team}")
+    if match_id:
+        filename_parts.append(f"match_{match_id}")
+    if min_time1 or max_time1:
+        time_info = f"time_{min_time1 or '0'}-{max_time1 or 'inf'}"
+        filename_parts.append(time_info)
+    
+    filename = "_".join(filename_parts) + ".csv"
+    filename = filename.replace(" ", "_")  # スペースをアンダースコアに置換
+    
+    # レスポンスを作成
+    output.seek(0)
+    processing_time = round(time.time() - start_time, 3)
+    
+    response = Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={"Content-disposition": f"attachment; filename={filename}"}
+    )
+    
+    print(f"📄 Event search CSV exported: {len(events)} events in {processing_time}s -> {filename}")
+    return response
 
 @main.route('/tournament/<int:tournament_id>/add_match', methods=['GET', 'POST'])
 def add_match_to_tournament(tournament_id):
