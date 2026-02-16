@@ -34,7 +34,7 @@
                 <div class="card-body text-center">
                     <h4 class="card-title">🏆 大会・試合選択</h4>
                     <p class="card-text">大会から特定の試合を選択してGIS分析</p>
-                    <a href="{{ url_for('main.tournament_match_selection') }}" class="btn btn-primary">試合を選択</a>
+                    <a href="{{ url_for('main.tournament_match_selection') }}" class="btn btn-primary btn-lg">試合を選択</a>
                 </div>
             </div>
         </div>
@@ -43,7 +43,7 @@
                 <div class="card-body text-center">
                     <h4 class="card-title">🗺️ インタラクティブGIS</h4>
                     <p class="card-text">全データの高度な空間分析・可視化</p>
-                    <a href="{{ url_for('main.interactive_gis_map') }}" class="btn btn-success">GIS分析</a>
+                    <a href="{{ url_for('main.interactive_gis_map') }}" class="btn btn-success btn-lg">GIS分析</a>
                 </div>
             </div>
         </div>
@@ -82,11 +82,22 @@
                     <!-- CSV管理リンク -->
                     {% if match_data %}
                     <div class="row mt-3">
-                        <div class="col-md-12">
-                            <div class="alert alert-success d-flex justify-content-between align-items-center">
-                                <span>📊 登録済み: {{ match_data|length }} 件のイベントデータ</span>
-                                <a href="{{ url_for('main.manage_csv') }}" class="btn btn-sm btn-outline-secondary">📋 管理・削除</a>
+                        <div class="col-md-6">
+                            <div class="alert alert-success">
+                                <strong>📊 イベントデータ</strong><br>
+                                {{ match_data|length }} 件のマッチデータ
                             </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="alert alert-info">
+                                <strong>🔗 シーケンスデータ</strong><br>
+                                {{ total_sequences }} 個のシーケンス ({{ sequence_matches }} 試合分)
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12 text-center">
+                            <a href="{{ url_for('main.manage_csv') }}" class="btn btn-outline-secondary">⚙️ データ管理</a>
                         </div>
                     </div>
                     {% endif %}
@@ -100,12 +111,12 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header">
-                    <h5>大会管理</h5>
+                    <h5>⚙️ 大会管理</h5>
                 </div>
                 <div class="card-body">
                     <div class="row">
-                        <div class="col-md-12">
-                            <a href="/add_tournament" class="btn btn-success btn-lg w-100 mb-2">➕ 新しい大会を追加</a>
+                        <div class="col-md-12 text-center">
+                            <a href="/add_tournament" class="btn btn-success btn-lg">➕ 新しい大会を追加</a>
                         </div>
                     </div>
                 </div>

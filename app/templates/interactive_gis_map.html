@@ -803,7 +803,7 @@
         {% if events %}
         <div class="mt-4">
             <div class="alert alert-info d-flex justify-content-between align-items-center mb-3">
-                <span><strong>⏱️ 検索処理時間: {{ processing_time }}秒</strong></span>
+                <span><strong>🕐 検索時間: {{ processing_time }}秒</strong></span>
             </div>
             <h4>📋 Event List</h4>
             <div class="table-responsive">
@@ -928,7 +928,6 @@
         
         <div class="mt-4 text-center">
             <a href="{{ url_for('main.index') }}" class="btn btn-outline-primary">🏠 Back to Home</a>
-            <a href="{{ url_for('main.event_search') }}" class="btn btn-outline-secondary">📊 Standard Search</a>
         </div>
     </div>
 
@@ -1050,7 +1049,27 @@
         {% endif %}
         ];
         
-        console.log(`Loaded ${originalEvents.length} events for GIS display`);
+        // EventSequenceデータ（GIS情報付き）をJavaScriptに渡す
+        const eventSequences = [
+        {% if sequences %}
+            {% for seq in sequences %}
+            {
+                id: {{ seq.id }},
+                team: "{{ seq.team }}",
+                sequence_number: {{ seq.sequence_number }},
+                start_time: {{ seq.start_time }},
+                end_time: {{ seq.end_time }},
+                event_count: {{ seq.event_count }},
+                trajectory_wkt: {{ '"' + seq.trajectory_wkt + '"' if seq.trajectory_wkt else 'null' }},
+                start_point_wkt: {{ '"' + seq.start_point_wkt + '"' if seq.start_point_wkt else 'null' }},
+                end_point_wkt: {{ '"' + seq.end_point_wkt + '"' if seq.end_point_wkt else 'null' }},
+                coverage_area_wkt: {{ '"' + seq.coverage_area_wkt + '"' if seq.coverage_area_wkt else 'null' }}
+            }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        {% endif %}
+        ];
+        
+        console.log(`Loaded ${originalEvents.length} events and ${eventSequences.length} sequences for GIS display`);
         
         // デバッグ情報をページに表示
         const debugInfo = document.getElementById('debugInfo');
@@ -2039,8 +2058,7 @@
                          // クリックイベント
                 line.on('click', () => {
                     if (window.sequenceExtractionMode) {
-                        const sequence = extractAttackSequence(event);
-                        highlightSequence(sequence);
+                        extractAttackSequence(event);
                     } else {
                         showEventDetails(event);
                     }
@@ -2057,8 +2075,7 @@
                     });
                     endMarker.on('click', () => {
                         if (window.sequenceExtractionMode) {
-                            const sequence = extractAttackSequence(event);
-                            highlightSequence(sequence);
+                            extractAttackSequence(event);
                         } else {
                             showEventDetails(event);
                         }
@@ -2068,8 +2085,7 @@
                 
                 startMarker.on('click', () => {
                     if (window.sequenceExtractionMode) {
-                        const sequence = extractAttackSequence(event);
-                        highlightSequence(sequence);
+                        extractAttackSequence(event);
                     } else {
                         showEventDetails(event);
                     }
@@ -2077,8 +2093,177 @@
                 window.eventLayer.addLayer(startMarker);
             });
             
+            // EventSequenceのGIS情報を表示
+            displayEventSequences();
+            
             // イベント数の表示を更新
             updateSpatialSearchInfo();
+        }
+        
+        // EventSequenceのGIS情報（trajectory, start_point, end_point, coverage_area）を地図上に表示
+        function displayEventSequences() {
+            // EventSequence専用レイヤーを初期化
+            if (window.sequenceLayer) {
+                window.sequenceLayer.clearLayers();
+            } else {
+                window.sequenceLayer = L.layerGroup();
+                map.addLayer(window.sequenceLayer);
+            }
+            
+            console.log(`🗺️ Displaying ${eventSequences.length} EventSequences with GIS data`);
+            
+            eventSequences.forEach(sequence => {
+                // チーム色の設定
+                const color = sequence.team === 'left' ? '#dc3545' : '#007bff';
+                const fillColor = sequence.team === 'left' ? '#ffebee' : '#e3f2fd';
+                
+                // 1. Coverage Area（通過エリア）を表示
+                if (sequence.coverage_area_wkt) {
+                    try {
+                        // WKTをLeafletのLatLngに変換（簡易実装）
+                        const coords = parsePolygonWKT(sequence.coverage_area_wkt);
+                        if (coords && coords.length > 0) {
+                            const polygon = L.polygon(coords, {
+                                color: color,
+                                fillColor: fillColor,
+                                weight: 1,
+                                opacity: 0.4,
+                                fillOpacity: 0.1,
+                                dashArray: '5, 5'
+                            });
+                            
+                            polygon.bindPopup(`
+                                <b>Sequence Coverage Area</b><br>
+                                Team: ${sequence.team}<br>
+                                Sequence #${sequence.sequence_number}<br>
+                                Events: ${sequence.event_count}<br>
+                                Duration: ${sequence.end_time - sequence.start_time}s
+                            `);
+                            
+                            window.sequenceLayer.addLayer(polygon);
+                        }
+                    } catch (e) {
+                        console.warn(`Failed to parse coverage_area for sequence ${sequence.id}:`, e);
+                    }
+                }
+                
+                // 2. Trajectory（軌跡）を表示
+                if (sequence.trajectory_wkt) {
+                    try {
+                        const coords = parseLineStringWKT(sequence.trajectory_wkt);
+                        if (coords && coords.length > 1) {
+                            const polyline = L.polyline(coords, {
+                                color: color,
+                                weight: 3,
+                                opacity: 0.7,
+                                dashArray: '10, 5'
+                            });
+                            
+                            polyline.bindPopup(`
+                                <b>Sequence Trajectory</b><br>
+                                Team: ${sequence.team}<br>
+                                Sequence #${sequence.sequence_number}<br>
+                                Path Length: ${coords.length} points
+                            `);
+                            
+                            window.sequenceLayer.addLayer(polyline);
+                        }
+                    } catch (e) {
+                        console.warn(`Failed to parse trajectory for sequence ${sequence.id}:`, e);
+                    }
+                }
+                
+                // 3. Start Point（開始地点）を表示
+                if (sequence.start_point_wkt) {
+                    try {
+                        const coord = parsePointWKT(sequence.start_point_wkt);
+                        if (coord) {
+                            const startMarker = L.circleMarker(coord, {
+                                radius: 8,
+                                fillColor: color,
+                                color: '#000',
+                                weight: 2,
+                                opacity: 1,
+                                fillOpacity: 0.8
+                            });
+                            
+                            startMarker.bindPopup(`
+                                <b>Sequence Start</b><br>
+                                Team: ${sequence.team}<br>
+                                Sequence #${sequence.sequence_number}<br>
+                                Start Time: ${sequence.start_time}s
+                            `);
+                            
+                            window.sequenceLayer.addLayer(startMarker);
+                        }
+                    } catch (e) {
+                        console.warn(`Failed to parse start_point for sequence ${sequence.id}:`, e);
+                    }
+                }
+                
+                // 4. End Point（終了地点）を表示
+                if (sequence.end_point_wkt) {
+                    try {
+                        const coord = parsePointWKT(sequence.end_point_wkt);
+                        if (coord) {
+                            const endMarker = L.circleMarker(coord, {
+                                radius: 6,
+                                fillColor: color,
+                                color: '#000',
+                                weight: 2,
+                                opacity: 1,
+                                fillOpacity: 0.6
+                            });
+                            
+                            endMarker.bindPopup(`
+                                <b>Sequence End</b><br>
+                                Team: ${sequence.team}<br>
+                                Sequence #${sequence.sequence_number}<br>
+                                End Time: ${sequence.end_time}s
+                            `);
+                            
+                            window.sequenceLayer.addLayer(endMarker);
+                        }
+                    } catch (e) {
+                        console.warn(`Failed to parse end_point for sequence ${sequence.id}:`, e);
+                    }
+                }
+            });
+        }
+        
+        // WKT解析ヘルパー関数
+        function parsePointWKT(wkt) {
+            const match = wkt.match(/POINT\(([^)]+)\)/);
+            if (match) {
+                const coords = match[1].split(' ').map(parseFloat);
+                // RoboCup座標をLeaflet座標に変換
+                return [coords[1] + 34, coords[0] + 52.5]; // [lat, lng]
+            }
+            return null;
+        }
+        
+        function parseLineStringWKT(wkt) {
+            const match = wkt.match(/LINESTRING\(([^)]+)\)/);
+            if (match) {
+                const coordPairs = match[1].split(',');
+                return coordPairs.map(pair => {
+                    const coords = pair.trim().split(' ').map(parseFloat);
+                    return [coords[1] + 34, coords[0] + 52.5]; // [lat, lng]
+                });
+            }
+            return null;
+        }
+        
+        function parsePolygonWKT(wkt) {
+            const match = wkt.match(/POLYGON\(\(([^)]+)\)\)/);
+            if (match) {
+                const coordPairs = match[1].split(',');
+                return coordPairs.map(pair => {
+                    const coords = pair.trim().split(' ').map(parseFloat);
+                    return [coords[1] + 34, coords[0] + 52.5]; // [lat, lng]
+                });
+            }
+            return null;
         }
         
         // 数値を適切にフォーマットする関数（不要な末尾の0を削除）
@@ -2636,8 +2821,64 @@
             hideSequenceFilterButtons();
         }
         
-        // 攻撃シーケンスを抽出する関数（フロントエンドベース）
+        // 攻撃シーケンスを抽出する関数（EventSequenceテーブル活用）
         function extractAttackSequence(selectedEvent) {
+            console.log('🔗 Extracting sequence using EventSequence table for event:', selectedEvent.id);
+            
+            // EventSequence APIを呼び出し
+            fetch(`/api/event/${selectedEvent.id}/sequence`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error || data.fallback) {
+                        console.warn(`⚠️ EventSequence not found: ${data.message || data.error}`);
+                        console.log('🔄 Falling back to frontend sequence extraction');
+                        
+                        // フォールバック: フロントエンド処理
+                        const sequence = extractAttackSequenceFrontend(selectedEvent);
+                        highlightSequence(sequence);
+                        
+                        // フォールバック情報を表示
+                        const infoPanel = document.getElementById('sequenceInfoPanel');
+                        const team = selectedEvent.side1;
+                        const duration = sequence.length > 1 ? 
+                            (sequence[sequence.length - 1].time1 - sequence[0].time1).toFixed(1) : '0.0';
+                        infoPanel.innerHTML = `🔗 Frontend extracted: ${sequence.length} events from ${team} team (${duration}s) <span style="color: #666; font-size: 0.8em;">[EventSequence未作成]</span>`;
+                        
+                    } else {
+                        console.log(`✅ EventSequence found from database:`);
+                        console.log(`   Sequence #${data.sequence_info.sequence_number}: ${data.sequence_info.event_count} events`);
+                        console.log(`   Team: ${data.sequence_info.team}, Duration: ${data.sequence_info.duration.toFixed(1)}s`);
+                        console.log(`   Processing time: ${data.processing_time}s`);
+                        
+                        // データベースから取得したシーケンスを表示
+                        highlightSequence(data.events);
+                        
+                        // 統計情報を更新（EventSequence情報を使用）
+                        const infoPanel = document.getElementById('sequenceInfoPanel');
+                        infoPanel.innerHTML = `🔗 EventSequence #${data.sequence_info.sequence_number}: ${data.sequence_info.event_count} events from ${data.sequence_info.team} team (${data.sequence_info.duration.toFixed(1)}s) <span style="color: #0066cc; font-size: 0.8em;">[Database: ${data.processing_time}s]</span>`;
+                    }
+                })
+                .catch(error => {
+                    console.error('❌ Error fetching EventSequence:', error);
+                    console.log('🔄 Falling back to frontend sequence extraction due to error');
+                    
+                    // エラー時のフォールバック
+                    const sequence = extractAttackSequenceFrontend(selectedEvent);
+                    highlightSequence(sequence);
+                    
+                    // エラー情報を表示
+                    const infoPanel = document.getElementById('sequenceInfoPanel');
+                    const team = selectedEvent.side1;
+                    const duration = sequence.length > 1 ? 
+                        (sequence[sequence.length - 1].time1 - sequence[0].time1).toFixed(1) : '0.0';
+                    infoPanel.innerHTML = `🔗 Frontend extracted: ${sequence.length} events from ${team} team (${duration}s) <span style="color: #cc6600; font-size: 0.8em;">[API Error]</span>`;
+                });
+        }
+        
+        // フォールバック用の従来実装（フロントエンド処理）
+        function extractAttackSequenceFrontend(selectedEvent) {
+            console.log('🔄 Using frontend fallback for sequence extraction');
+            
             const eventsToSearch = spatialSearchActive ? filteredEvents : originalEvents;
             const matchEvents = eventsToSearch
                 .filter(e => e.match_id === selectedEvent.match_id)
@@ -2698,6 +2939,7 @@
                 }
             }
             
+            console.log(`🔄 Frontend extracted sequence: ${sequence.length} events`);
             return sequence;
         }
         

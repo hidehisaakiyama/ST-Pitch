@@ -37,6 +37,21 @@
 <body>
 
   <h1>チーム「{{ team }}」の連続イベント検索結果</h1>
+  
+  {% if processing_time %}
+  <div style="background-color: #e8f5e8; padding: 8px; margin-bottom: 15px; border-radius: 4px; font-size: 0.9em;">
+    ⚡ 処理時間: {{ processing_time }}秒
+    {% if fallback_mode %}
+    <span style="color: #666; margin-left: 10px;">
+      ⚠️ フォールバックモード（EventSequenceテーブル未作成のため動的生成）
+    </span>
+    {% else %}
+    <span style="color: #0066cc; margin-left: 10px;">
+      📊 EventSequenceテーブル活用版
+    </span>
+    {% endif %}
+  </div>
+  {% endif %}
 
   {% if sequences %}
     {% for seq in sequences %}

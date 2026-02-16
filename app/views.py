@@ -5,9 +5,10 @@ import os
 import time
 from io import StringIO
 from flask import Blueprint, render_template, request, redirect, url_for, current_app, jsonify, flash, Response
-from .models import db, MatchResult, EventData
+from .models import db, MatchResult, EventData, EventSequence
 from sqlalchemy import text, func, or_, and_
 from geoalchemy2.functions import ST_Contains, ST_Intersects, ST_DWithin
+from geoalchemy2 import WKTElement
 from werkzeug.utils import secure_filename
 
 main = Blueprint('main', __name__)
@@ -21,7 +22,15 @@ def index():
     # 登録済みのmatch_id数を取得（件数表示用）
     match_data = db.session.query(EventData.match_id).distinct().all()
     
-    return render_template('index.html', tournaments=tournaments, match_data=match_data)
+    # EventSequenceの統計情報を取得
+    total_sequences = EventSequence.query.count()
+    sequence_matches = db.session.query(EventSequence.match_id).distinct().count()
+    
+    return render_template('index.html', 
+                         tournaments=tournaments, 
+                         match_data=match_data,
+                         total_sequences=total_sequences,
+                         sequence_matches=sequence_matches)
 
 def parse_bool(value):
     if isinstance(value, bool):
@@ -33,6 +42,247 @@ def parse_bool(value):
         elif value in ["false", "0", "no"]:
             return False
     return None
+
+def generate_event_sequences(match_id):
+    """イベントデータからシーケンスを生成してEventSequenceテーブルに保存"""
+    try:
+        # 既存のシーケンスを削除（重複回避）
+        deleted_count = EventSequence.query.filter_by(match_id=match_id).delete()
+        if deleted_count > 0:
+            print(f"🗑️ 既存シーケンス削除: {match_id} ({deleted_count}個)")
+        
+        # 時系列順でイベントを取得
+        events = EventData.query.filter_by(match_id=match_id).order_by(EventData.time1).all()
+        
+        if not events:
+            raise Exception(f"イベントデータが見つかりません (match_id: {match_id})")
+        
+        # チーム別にシーケンスを生成
+        teams = set(event.side1 for event in events if event.side1)
+        if not teams:
+            raise Exception(f"有効なチーム情報がありません (match_id: {match_id})")
+        
+        total_sequences = 0
+        for team in teams:
+            sequences = analyze_team_sequences(events, team)
+            
+            # シーケンスをデータベースに保存
+            team_sequences = 0
+            for seq_num, sequence in enumerate(sequences, 1):
+                if len(sequence) >= 2:  # 2つ以上のイベントで構成されるシーケンスのみ
+                    save_sequence(match_id, team, seq_num, sequence)
+                    team_sequences += 1
+            
+            total_sequences += team_sequences
+            print(f"📈 {team}: {team_sequences}個のシーケンスを生成")
+        
+        db.session.commit()
+        print(f"✅ {match_id}: 合計{total_sequences}個のシーケンスを生成完了")
+        
+        return total_sequences
+        
+    except Exception as e:
+        db.session.rollback()
+        error_msg = f"シーケンス生成エラー (match_id: {match_id}): {str(e)}"
+        print(f"❌ {error_msg}")
+        raise Exception(error_msg)
+
+def analyze_team_sequences(all_events, team):
+    """チームのイベントを連続シーケンスに分析（フロントエンドロジックと同じ条件）"""
+    # 該当チームのイベントのみ抽出
+    team_events = [event for event in all_events if event.side1 == team]
+    if not team_events:
+        return []
+    
+    sequences = []
+    
+    for i, selected_event in enumerate(team_events):
+        # 各イベントを起点とした攻撃シーケンスを抽出
+        sequence = extract_attack_sequence_for_event(all_events, selected_event, team)
+        
+        # 重複チェック: 既存のシーケンスと重複していないか確認
+        is_duplicate = False
+        for existing_seq in sequences:
+            if any(event.id == selected_event.id for event in existing_seq):
+                is_duplicate = True
+                break
+        
+        # 重複していない場合のみ追加（2つ以上のイベントで構成される場合）
+        if not is_duplicate and len(sequence) >= 2:
+            sequences.append(sequence)
+    
+    return sequences
+
+
+def extract_attack_sequence_for_event(all_events, selected_event, team):
+    """指定されたイベントを含む攻撃シーケンスを抽出（フロントエンドと同じロジック）"""
+    # 同じ試合のイベントのみを対象
+    match_events = [e for e in all_events if e.match_id == selected_event.match_id]
+    match_events.sort(key=lambda x: x.time1)
+    
+    selected_index = None
+    for idx, event in enumerate(match_events):
+        if event.id == selected_event.id:
+            selected_index = idx
+            break
+    
+    if selected_index is None:
+        return [selected_event]
+    
+    # 攻撃シーケンスの開始を見つける（後方検索）
+    sequence_start = selected_index
+    for i in range(selected_index - 1, -1, -1):
+        event = match_events[i]
+        
+        # リセット条件：不自然なInterception（得点後の戻し処理など）
+        if (event.type == "Interception" and event.mode1 == "play_on" and 
+            event.x2 == 0.0 and event.y2 == 0.0):
+            break
+        
+        if event.side1 == team:
+            sequence_start = i
+        elif event.side1 and event.side1 != team:
+            break
+    
+    # 攻撃シーケンスの終了を見つける（前方検索）
+    sequence_end = selected_index
+    for i in range(selected_index + 1, len(match_events)):
+        event = match_events[i]
+        
+        # リセット条件：不自然なInterception
+        if (event.type == "Interception" and event.mode1 == "play_on" and 
+            event.x2 == 0.0 and event.y2 == 0.0):
+            break
+        
+        # ボールが相手に渡った、またはneutralになった場合
+        if event.side2 and event.side2 != team:
+            sequence_end = i
+            break
+        elif event.side1 and event.side1 != team:
+            break
+        elif event.side1 == team:
+            sequence_end = i
+    
+    # シーケンスを抽出（同じチームのイベントのみ）
+    sequence = []
+    for i in range(sequence_start, sequence_end + 1):
+        event = match_events[i]
+        if event.side1 == team:
+            sequence.append(event)
+    
+    return sequence
+
+def save_sequence(match_id, team, sequence_number, events):
+    """イベントシーケンスをGIS情報付きでデータベースに保存"""
+    import json
+    from geoalchemy2 import WKTElement
+    
+    if not events:
+        return
+    
+    start_event = events[0]
+    end_event = events[-1]
+    
+    # GIS情報を生成
+    gis_data = calculate_sequence_gis_data(events)
+    
+    sequence = EventSequence(
+        match_id=match_id,
+        team=team,
+        sequence_number=sequence_number,
+        start_time=int(start_event.time1),
+        end_time=int(end_event.time1),
+        event_count=len(events),
+        event_ids=json.dumps([event.id for event in events]),
+        # GIS情報を設定
+        trajectory=gis_data['trajectory'],
+        start_point=gis_data['start_point'],
+        end_point=gis_data['end_point'],
+        coverage_area=gis_data['coverage_area']
+    )
+    
+    db.session.add(sequence)
+    print(f"💾 シーケンス保存: {team} #{sequence_number} ({len(events)}イベント, {start_event.time1}-{end_event.time1}秒) [GIS情報付き]")
+
+def calculate_sequence_gis_data(events):
+    """シーケンスのGIS情報（trajectory, start_point, end_point, coverage_area）を計算"""
+    from geoalchemy2 import WKTElement
+    
+    if not events:
+        return {'trajectory': None, 'start_point': None, 'end_point': None, 'coverage_area': None}
+    
+    try:
+        # 座標を収集
+        valid_points = []
+        trajectory_coords = []
+        
+        for event in events:
+            if event.x1 is not None and event.y1 is not None:
+                point_coords = (event.x1, event.y1)
+                valid_points.append(point_coords)
+                trajectory_coords.append(f"{event.x1} {event.y1}")
+                
+                # 移動先座標も追加
+                if event.x2 is not None and event.y2 is not None:
+                    end_coords = (event.x2, event.y2)
+                    valid_points.append(end_coords)
+                    trajectory_coords.append(f"{event.x2} {event.y2}")
+        
+        if len(valid_points) < 1:
+            return {'trajectory': None, 'start_point': None, 'end_point': None, 'coverage_area': None}
+        
+        # 開始地点と終了地点
+        start_coords = valid_points[0]
+        end_coords = valid_points[-1]
+        
+        start_point_wkt = f"SRID=4326;POINT({start_coords[0]} {start_coords[1]})"
+        end_point_wkt = f"SRID=4326;POINT({end_coords[0]} {end_coords[1]})"
+        
+        # 軌跡（LINESTRING）
+        trajectory_wkt = None
+        if len(trajectory_coords) >= 2:
+            # 重複する連続する座標を削除
+            unique_coords = []
+            for coord in trajectory_coords:
+                if not unique_coords or unique_coords[-1] != coord:
+                    unique_coords.append(coord)
+            
+            if len(unique_coords) >= 2:
+                trajectory_wkt = f"SRID=4326;LINESTRING({', '.join(unique_coords)})"
+        
+        # 通過エリア（凸包の代わりに境界矩形）
+        coverage_area_wkt = None
+        if len(valid_points) >= 3:
+            # 重複を削除
+            unique_points = list(dict.fromkeys(valid_points))
+            if len(unique_points) >= 3:
+                x_coords = [x for x, y in unique_points]
+                y_coords = [y for x, y in unique_points]
+                
+                min_x, max_x = min(x_coords), max(x_coords)
+                min_y, max_y = min(y_coords), max(y_coords)
+                
+                # 最小サイズを確保
+                if abs(max_x - min_x) < 1:
+                    center_x = (min_x + max_x) / 2
+                    min_x, max_x = center_x - 0.5, center_x + 0.5
+                if abs(max_y - min_y) < 1:
+                    center_y = (min_y + max_y) / 2
+                    min_y, max_y = center_y - 0.5, center_y + 0.5
+                
+                # 矩形ポリゴン
+                coverage_area_wkt = f"SRID=4326;POLYGON(({min_x} {min_y}, {max_x} {min_y}, {max_x} {max_y}, {min_x} {max_y}, {min_x} {min_y}))"
+        
+        return {
+            'trajectory': WKTElement(trajectory_wkt) if trajectory_wkt else None,
+            'start_point': WKTElement(start_point_wkt),
+            'end_point': WKTElement(end_point_wkt),
+            'coverage_area': WKTElement(coverage_area_wkt) if coverage_area_wkt else None
+        }
+        
+    except Exception as e:
+        print(f"❌ GIS情報計算エラー: {str(e)}")
+        return {'trajectory': None, 'start_point': None, 'end_point': None, 'coverage_area': None}
 
 @main.route('/search')
 def search():
@@ -143,142 +393,7 @@ def upload_csv_redirect(tournament_id):
     # GETの場合もCSVアップロードページへリダイレクト
     return redirect(url_for('main.upload_event_csv'))
 
-@main.route('/event_search')
-def event_search():
-    start_time = time.time()
-    
-    selected_type = request.args.get('event_type')
-    selected_team = request.args.get('team')
-    selected_unum = request.args.get('unum')
-    selected_success = request.args.get('success')
-    selected_match = request.args.get("match_id")
-    selected_mode = request.args.get('mode')
-    x_min = request.args.get('x_min')
-    x_max = request.args.get('x_max')
-    y_min = request.args.get('y_min')
-    y_max = request.args.get('y_max')
-    min_time1 = request.args.get("min_time1")
-    max_time1 = request.args.get("max_time1")
-    match_ids = [m[0] for m in db.session.query(EventData.match_id).distinct().order_by(EventData.match_id).all()]
-    page = request.args.get("page", 1, type=int)
-    per_page = 500  # 一度に表示するイベント数
 
-    query = EventData.query
-
-    # 基本フィルタ処理
-    if selected_type:
-        query = query.filter(EventData.type == selected_type)
-    if selected_team:
-        query = query.filter(EventData.side1 == selected_team)
-    if selected_mode:
-        query = query.filter(EventData.mode1 == selected_mode)
-    if selected_unum:
-        try:
-            query = query.filter(EventData.unum1 == int(selected_unum))
-        except ValueError:
-            pass
-    if selected_success in ["true", "false"]:
-        query = query.filter(EventData.success == (selected_success == "true"))
-    if selected_match and selected_match != "all":
-        query = query.filter(EventData.match_id == selected_match)
-    if x_min:
-        try:
-            query = query.filter(EventData.x1 >= float(x_min))
-        except ValueError:
-            pass
-    if x_max:
-        try:
-            query = query.filter(EventData.x1 <= float(x_max))
-        except ValueError:
-            pass
-    if y_min:
-        try:
-            query = query.filter(EventData.y1 >= float(y_min))
-        except ValueError:
-            pass
-    if y_max:
-        try:
-            query = query.filter(EventData.y1 <= float(y_max))
-        except ValueError:
-            pass
-    if min_time1:
-        try:
-            query = query.filter(EventData.time1 >= float(min_time1))
-        except ValueError:
-            pass
-    if max_time1:
-        try:
-            query = query.filter(EventData.time1 <= float(max_time1))
-        except ValueError:
-            pass
-
-    # 複数矩形範囲処理
-    rects_json = request.args.get("rects_json")
-    if rects_json:
-        try:
-            rects = json.loads(rects_json)
-            rect_filters = []
-            for r in rects:
-                rect_filters.append(and_(
-                    EventData.x1 >= r['x_min'],
-                    EventData.x1 <= r['x_max'],
-                    EventData.y1 >= r['y_min'],
-                    EventData.y1 <= r['y_max']
-                ))
-            if rect_filters:
-                query = query.filter(or_(*rect_filters))
-        except Exception as e:
-            print("矩形フィルタの処理エラー:", e)
-
-    # ページネーション
-    import math
-    from collections import defaultdict
-    
-    total_items = query.count()
-    total_pages = math.ceil(total_items / per_page)
-    pagination = query.order_by(EventData.match_id, EventData.time1).paginate(page=page, per_page=per_page, error_out=False)
-    events = pagination.items
-
-    # match_idでグループ化
-    events_by_match = defaultdict(list)
-    for event in events:
-        events_by_match[event.match_id].append(event)
-
-    # 検索フォーム選択肢
-    event_types = [et[0] for et in db.session.query(EventData.type).distinct().order_by(EventData.type)]
-    teams = [t[0] for t in db.session.query(EventData.side1).distinct().order_by(EventData.side1)]
-    modes = [m[0] for m in db.session.query(EventData.mode1).distinct().order_by(EventData.mode1)]
-    unums = [u[0] for u in db.session.query(EventData.unum1).distinct().order_by(EventData.unum1) if u[0] is not None]
-
-    # 処理時間を計測
-    processing_time = round(time.time() - start_time, 3)
-
-    return render_template(
-        'event_search.html',
-        event_types=event_types,
-        teams=teams,
-        modes=modes,
-        unums=unums,
-        match_ids=match_ids,
-        events_by_match=events_by_match,
-        pagination=pagination,
-        page=page,
-        total_pages=total_pages,
-        selected_type=request.args.get("event_type", ""),
-        selected_team=request.args.get("team", ""),
-        selected_unum=request.args.get("unum", ""),
-        selected_success=request.args.get("success", ""),
-        selected_mode=request.args.get("mode", ""),
-        selected_match=request.args.get("match_id", ""),
-        x_min=request.args.get("x_min", ""),
-        x_max=request.args.get("x_max", ""),
-        y_min=request.args.get("y_min", ""),
-        y_max=request.args.get("y_max", ""),
-        min_time1=request.args.get("min_time1", ""),
-        max_time1=request.args.get("max_time1", ""),
-        rects_json=request.args.get("rects_json", ""),
-        processing_time=processing_time
-    )
 
 @main.route('/upload_event_csv', methods=['GET', 'POST'])
 def upload_event_csv():
@@ -288,6 +403,7 @@ def upload_event_csv():
         
         files = request.files.getlist('file')  # 複数ファイル対応
         uploaded_files = []
+        skipped_files = []
         total_events = 0
         
         for file in files:
@@ -295,6 +411,22 @@ def upload_event_csv():
                 filename = secure_filename(file.filename)
                 match_id = os.path.splitext(filename)[0]  # ファイル名を match_id に使う
                 print(f"★処理中: file.filename={file.filename}, match_id={match_id}")
+                
+                # 既存データのチェック
+                existing_event_count = EventData.query.filter_by(match_id=match_id).count()
+                existing_sequence_count = EventSequence.query.filter_by(match_id=match_id).count()
+                
+                if existing_event_count > 0:
+                    sequence_info = f", {existing_sequence_count}シーケンス" if existing_sequence_count > 0 else ""
+                    print(f"⚠️ 重複スキップ - 既にデータベースに存在: {match_id} ({existing_event_count}イベント{sequence_info})")
+                    skipped_files.append({
+                        'filename': filename, 
+                        'events': existing_event_count, 
+                        'sequences': existing_sequence_count,
+                        'reason': '重複'
+                    })
+                    continue
+                
                 filepath = os.path.join('uploads', filename)
                 os.makedirs('uploads', exist_ok=True)
                 file.save(filepath)
@@ -322,21 +454,74 @@ def upload_event_csv():
                         db.session.add(event)
                         event_count += 1
                 
-                uploaded_files.append({'filename': filename, 'events': event_count})
+                # イベントシーケンスの自動生成
+                sequence_count = 0
+                sequence_error = None
+                try:
+                    print(f"📊 シーケンス分析開始: {match_id}")
+                    generate_event_sequences(match_id)
+                    sequence_count = EventSequence.query.filter_by(match_id=match_id).count()
+                    print(f"✅ シーケンス分析完了: {match_id} ({sequence_count}個のシーケンス生成)")
+                except Exception as e:
+                    sequence_error = str(e)
+                    print(f"❌ シーケンス生成エラー ({match_id}): {e}")
+                
+                uploaded_files.append({
+                    'filename': filename, 
+                    'events': event_count,
+                    'sequences': sequence_count,
+                    'sequence_error': sequence_error
+                })
                 total_events += event_count
         
-        db.session.commit()
-        print(f"✅ {len(uploaded_files)}個のファイル、{total_events}個のイベントをデータベースに登録完了")
+        if uploaded_files:
+            try:
+                db.session.commit()
+                print(f"✅ {len(uploaded_files)}個のファイル、{total_events}個のイベントをデータベースに登録完了")
+            except Exception as e:
+                db.session.rollback()
+                print(f"❌ データベースコミット時エラー: {e}")
+                flash('データベースへの保存中にエラーが発生しました。管理者にお問い合わせください。', 'error')
+                return redirect(url_for('main.upload_event_csv'))
+        
+        # 結果メッセージの作成
+        if uploaded_files and skipped_files:
+            total_sequences = sum(f.get('sequences', 0) for f in uploaded_files)
+            sequence_errors = [f for f in uploaded_files if f.get('sequence_error')]
+            
+            base_msg = f'✅ {len(uploaded_files)}個のCSVファイルをアップロードしました（合計 {total_events} イベント、{total_sequences} シーケンス生成）。{len(skipped_files)}個のファイルは既存のため重複スキップされました。'
+            
+            if sequence_errors:
+                error_files = ', '.join(f['filename'] for f in sequence_errors)
+                base_msg += f' ⚠️ {len(sequence_errors)}個のファイルでシーケンス生成エラーが発生: {error_files}'
+            
+            flash(base_msg, 'success' if not sequence_errors else 'warning')
+            
+        elif uploaded_files:
+            total_sequences = sum(f.get('sequences', 0) for f in uploaded_files)
+            sequence_errors = [f for f in uploaded_files if f.get('sequence_error')]
+            
+            base_msg = f'✅ {len(uploaded_files)}個のCSVファイルを正常にアップロードしました。（合計 {total_events} イベント、{total_sequences} シーケンス生成）'
+            
+            if sequence_errors:
+                error_files = ', '.join(f['filename'] for f in sequence_errors)
+                base_msg += f' ⚠️ {len(sequence_errors)}個のファイルでシーケンス生成エラーが発生: {error_files}'
+            
+            flash(base_msg, 'success' if not sequence_errors else 'warning')
+            
+        elif skipped_files:
+            flash(f'⚠️ 選択された{len(skipped_files)}個のファイルは全て既にデータベースに存在するため、アップロードされませんでした。', 'warning')
+        else:
+            flash('❌ アップロードするファイルが選択されていません。', 'error')
         
         # リクエストの参照元に応じてリダイレクト先を決定
         referrer = request.referrer
         if referrer and 'upload_event_csv' not in referrer:
             # トップページからのアップロードの場合はトップページに戻る
-            flash(f'✅ {len(uploaded_files)}個のCSVファイルを正常にアップロードしました。（合計 {total_events} イベント）', 'success')
             return redirect(url_for('main.index'))
         else:
-            # 直接アクセスの場合はイベント検索へ
-            return redirect(url_for('main.event_search'))
+            # 直接アクセスの場合もトップページへ
+            return redirect(url_for('main.index'))
 
     return render_template('upload_event_csv.html')
 
@@ -367,6 +552,33 @@ def delete_match_events():
         print(f"✅ Match ID '{match_id}' のイベントデータ {event_count}件 を削除しました。")
     else:
         flash('❌ 削除するMatch IDが指定されていません。', 'error')
+    
+    return redirect(url_for('main.manage_csv'))
+
+@main.route('/generate_all_sequences', methods=['POST'])
+def generate_all_sequences():
+    """全てのmatch_idに対してシーケンスを生成"""
+    try:
+        # 既存のシーケンスを全削除
+        EventSequence.query.delete()
+        db.session.commit()
+        
+        # 全てのmatch_idを取得
+        match_ids = db.session.query(EventData.match_id).distinct().all()
+        match_ids = [m[0] for m in match_ids]
+        
+        generated_count = 0
+        for match_id in match_ids:
+            print(f"🔄 シーケンス生成中: {match_id}")
+            generate_event_sequences(match_id)
+            generated_count += 1
+        
+        total_sequences = EventSequence.query.count()
+        flash(f'✅ {generated_count}試合分のシーケンスを生成しました（合計 {total_sequences} シーケンス）', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        flash(f'❌ シーケンス生成中にエラーが発生しました: {e}', 'error')
     
     return redirect(url_for('main.manage_csv'))
 
@@ -430,6 +642,65 @@ def get_tournament_matches(tournament_id):
     
     return jsonify(matches_data)
 
+@main.route('/api/match/<string:match_id>/sequences')
+def get_match_sequences(match_id):
+    """試合のイベントシーケンスを取得"""
+    sequences = EventSequence.query.filter_by(match_id=match_id).order_by(
+        EventSequence.team, EventSequence.sequence_number
+    ).all()
+    
+    sequences_data = []
+    for seq in sequences:
+        sequences_data.append({
+            'id': seq.id,
+            'team': seq.team,
+            'sequence_number': seq.sequence_number,
+            'start_time': seq.start_time,
+            'end_time': seq.end_time,
+            'duration': seq.end_time - seq.start_time,
+            'event_count': seq.event_count,
+            'event_ids': json.loads(seq.event_ids) if seq.event_ids else []
+        })
+    
+    return jsonify(sequences_data)
+
+@main.route('/api/sequences/<int:sequence_id>/events')
+def get_sequence_events(sequence_id):
+    """シーケンスに含まれるイベント詳細を取得"""
+    sequence = EventSequence.query.get_or_404(sequence_id)
+    event_ids = json.loads(sequence.event_ids) if sequence.event_ids else []
+    
+    events = EventData.query.filter(EventData.id.in_(event_ids)).order_by(EventData.time1).all()
+    
+    events_data = []
+    for event in events:
+        events_data.append({
+            'id': event.id,
+            'type': event.type,
+            'time1': event.time1,
+            'x1': event.x1,
+            'y1': event.y1,
+            'x2': event.x2,
+            'y2': event.y2,
+            'side1': event.side1,
+            'side2': event.side2,
+            'unum1': event.unum1,
+            'unum2': event.unum2,
+            'success': event.success
+        })
+    
+    return jsonify({
+        'sequence': {
+            'id': sequence.id,
+            'team': sequence.team,
+            'sequence_number': sequence.sequence_number,
+            'start_time': sequence.start_time,
+            'end_time': sequence.end_time,
+            'event_count': sequence.event_count
+        },
+        'events': events_data
+    })
+
 @main.route('/tournament/<int:tournament_id>/add_matches', methods=['GET', 'POST'])
 def add_matches_to_tournament(tournament_id):
     """大会にCSVデータから試合を追加する"""
@@ -448,6 +719,7 @@ def add_matches_to_tournament(tournament_id):
             return redirect(url_for('main.add_matches_to_tournament', tournament_id=tournament_id))
         
         added_count = 0
+        skipped_count = 0
         for csv_match_id in selected_match_ids:
             # CSVのmatch_idから基本情報を抽出
             try:
@@ -464,14 +736,12 @@ def add_matches_to_tournament(tournament_id):
                     team1 = team1_raw.replace('2024', '').replace('2023', '')
                     team2 = team2_raw.replace('2024', '').replace('2023', '')
                     
-                    # 既存の試合をチェック（重複防止） - RCGファイル名とmatch_idの両方でチェック
-                    existing_match = MatchResult.query.filter_by(
-                        tournament_id=tournament_id,
-                        rcg_filename=rcg_filename
-                    ).first()
+                    # データベース全体で既に登録済みかチェック（一意制約対応）
+                    existing_match = MatchResult.query.filter_by(rcg_filename=rcg_filename).first()
                     
                     if existing_match:
-                        print(f"⚠️ 既に登録済みの試合をスキップ: {rcg_filename}")
+                        skipped_count += 1
+                        print(f"⚠️ 一括追加 - 重複スキップ - 大会「{existing_match.tournament.name}」に既に登録済み: {rcg_filename}")
                         continue  # 既に登録済みの場合はスキップ
                     
                     # 新しい試合を作成
@@ -492,28 +762,39 @@ def add_matches_to_tournament(tournament_id):
                 print(f"試合追加エラー ({csv_match_id}): {e}")
                 continue
         
-        if added_count > 0:
-            db.session.commit()
-            flash(f'✅ {added_count}試合を大会に追加しました。', 'success')
-        else:
-            flash('追加できる新しい試合がありませんでした。', 'info')
+        try:
+            if added_count > 0:
+                db.session.commit()
+                if skipped_count > 0:
+                    flash(f'✅ {added_count}試合を大会に追加しました。（{skipped_count}試合は既に他の大会に登録済みのためスキップされました）', 'success')
+                else:
+                    flash(f'✅ {added_count}試合を大会に追加しました。', 'success')
+            else:
+                if skipped_count > 0:
+                    flash(f'選択された{skipped_count}試合は全て既に他の大会に登録済みです。', 'warning')
+                else:
+                    flash('追加できる新しい試合がありませんでした。', 'info')
+        except Exception as e:
+            db.session.rollback()
+            print(f"一括追加 - データベースコミット時エラー: {e}")
+            flash('試合の追加中にエラーが発生しました。管理者にお問い合わせください。', 'error')
         
         return redirect(url_for('main.view_tournament', tournament_id=tournament_id))
     
     # GET: 利用可能な試合を表示
-    # 既に大会に登録されている試合を取得
-    registered_matches = MatchResult.query.filter_by(tournament_id=tournament_id).all()
+    # データベース全体で既に登録されている試合を取得
+    all_registered_matches = MatchResult.query.all()
     
     # 登録済み試合のmatch_idセットを作成（より確実な比較のため）
     registered_match_ids = set()
-    for match in registered_matches:
+    for match in all_registered_matches:
         # RCGファイル名からmatch_idを逆算
         csv_match_id = match.rcg_filename.replace('.rcg.gz', '').replace('.rcg', '')
         if not csv_match_id.endswith('.event'):
             csv_match_id += '.event'
         registered_match_ids.add(csv_match_id)
     
-    print(f"🔍 登録済みmatch_ids: {registered_match_ids}")
+    print(f"🔍 一括追加 - データベース全体で登録済みmatch_ids: {len(registered_match_ids)}件")
     
     # CSVデータから全ての利用可能な試合を取得（match_id順でソート）
     available_matches = db.session.query(
@@ -564,76 +845,182 @@ def add_matches_to_tournament(tournament_id):
     return render_template('add_matches_to_tournament.html',
                          tournament=tournament,
                          unregistered_matches=unregistered_matches,
-                         registered_count=len(registered_matches))
-
-@main.route('/event_sequence_search')
-def event_sequence_search():
-    match_id = request.args.get("match_id")
-    events = EventData.query.filter_by(match_id=match_id).order_by(EventData.time1).all()
-
-    sequences = []
-    current_seq = []
-    current_team = None
-
-    for e in events:
-        # 不自然なInterception（得点後の戻し処理など）を除外条件に
-        is_reset = (
-            e.type == "Interception" and
-            e.mode1 == "play_on" and
-            e.x2 == 0.0 and e.y2 == 0.0
-        )
-
-        if is_reset:
-            if current_seq:
-                sequences.append(current_seq)
-                current_seq = []
-            current_team = None
-            continue
-
-        if current_team is None:
-            current_team = e.side1
-            current_seq.append(e)
-        elif e.side1 == current_team:
-            current_seq.append(e)
-
-            if e.side2 != current_team:
-                sequences.append(current_seq)
-                current_seq = []
-                current_team = None
-        else:
-            if current_seq:
-                sequences.append(current_seq)
-                current_seq = []
-            current_team = e.side1
-            current_seq.append(e)
-
-    if current_seq:
-        sequences.append(current_seq)
-
-    # 可視化用辞書に変換
-    sequence_dicts = []
-    for seq in sequences:
-        sequence_dicts.append([
-            {
-                "type": e.type,
-                "x1": e.x1,
-                "y1": e.y1,
-                "x2": e.x2,
-                "y2": e.y2,
-                "time1": e.time1,
-                "time2": e.time2,
-                "side1": e.side1,
-                "side2": e.side2,
-                "unum1": e.unum1,
-                "unum2": e.unum2,
-                "mode1": e.mode1
-            } for e in seq
-        ])
-
-    return render_template("event_sequence.html", sequences=sequence_dicts)
+                         registered_count=len(registered_match_ids))
 
 @main.route("/event_sequence_filtered")
 def event_sequence_filtered():
+    """EventSequenceテーブルを活用したシーケンス分析機能"""
+    from sqlalchemy import and_, or_
+    import json
+    
+    start_time = time.time()
+
+    # パラメータ取得
+    selected_type = request.args.get("event_type")
+    selected_team = request.args.get("team")
+    selected_match = request.args.get("match_id")
+    selected_unum = request.args.get("unum")
+    selected_success = request.args.get("success")
+    selected_mode = request.args.get("mode")
+    x_min = request.args.get("x_min", type=float)
+    x_max = request.args.get("x_max", type=float)
+    y_min = request.args.get("y_min", type=float)
+    y_max = request.args.get("y_max", type=float)
+    rects_json = request.args.get("rects_json")
+
+    # 矩形リスト取得
+    rects = []
+    if rects_json:
+        try:
+            rects = json.loads(rects_json)
+        except Exception:
+            rects = []
+
+    def is_in_any_rect(event):
+        """イベントが指定された矩形のいずれかに含まれるかチェック"""
+        for rect in rects:
+            if (rect["x_min"] <= event.x1 <= rect["x_max"] and
+                rect["y_min"] <= event.y1 <= rect["y_max"]):
+                return True
+        return False
+
+    def sequence_matches_filter(event_ids, filters):
+        """シーケンスが指定されたフィルターに一致するかチェック"""
+        if not event_ids:
+            return False
+        
+        # イベントIDリストから実際のイベントを取得
+        events = EventData.query.filter(EventData.id.in_(event_ids)).order_by(EventData.time1).all()
+        
+        for event in events:
+            # 基本フィルター条件をチェック
+            if filters.get('type') and event.type != filters['type']:
+                continue
+            if filters.get('team') and event.side1 != filters['team']:
+                continue
+            if filters.get('match_id') and event.match_id != filters['match_id']:
+                continue
+            if filters.get('unum') and event.unum1 != int(filters['unum']):
+                continue
+            if filters.get('success') is not None and event.success != filters['success']:
+                continue
+            if filters.get('mode') and event.mode1 != filters['mode']:
+                continue
+            
+            # 座標フィルター
+            x_min, x_max = filters.get('x_min'), filters.get('x_max')
+            if None not in (x_min, x_max) and not (x_min <= event.x1 <= x_max):
+                continue
+            
+            y_min, y_max = filters.get('y_min'), filters.get('y_max')
+            if None not in (y_min, y_max) and not (y_min <= event.y1 <= y_max):
+                continue
+            
+            # 矩形フィルター
+            if rects and not is_in_any_rect(event):
+                continue
+            
+            # 一つでも条件に一致するイベントがあればシーケンス全体を含める
+            return True
+        
+        return False
+
+    # EventSequenceテーブルから基本的なフィルター条件に基づいてシーケンスを取得
+    sequence_query = EventSequence.query
+    
+    # 試合指定があれば絞り込み
+    if selected_match:
+        # イベントIDを解析して該当する試合のシーケンスを絞り込み
+        sequence_query = sequence_query.filter(
+            EventSequence.event_ids.contains(f'"{selected_match}"')
+        )
+    
+    # チーム指定があれば絞り込み
+    if selected_team:
+        sequence_query = sequence_query.filter(EventSequence.team == selected_team)
+
+    sequences = sequence_query.order_by(EventSequence.start_time).all()
+    
+    # EventSequenceテーブルが空の場合の処理
+    if not sequences:
+        # 古い実装にフォールバック（動的生成）
+        return event_sequence_filtered_fallback()
+
+    # 詳細フィルター適用
+    filters = {
+        'type': selected_type,
+        'team': selected_team,
+        'match_id': selected_match,
+        'unum': selected_unum,
+        'success': selected_success == "true" if selected_success else None,
+        'mode': selected_mode,
+        'x_min': x_min,
+        'x_max': x_max,
+        'y_min': y_min,
+        'y_max': y_max
+    }
+
+    # フィルターを通すシーケンスを特定
+    matching_sequences = []
+    for sequence in sequences:
+        try:
+            event_ids = json.loads(sequence.event_ids)
+            if sequence_matches_filter(event_ids, filters):
+                matching_sequences.append(sequence)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    # シーケンス詳細データを構築
+    sequences_data = []
+    for sequence in matching_sequences:
+        try:
+            event_ids = json.loads(sequence.event_ids)
+            events = EventData.query.filter(EventData.id.in_(event_ids)).order_by(EventData.time1).all()
+            
+            sequence_events = []
+            for event in events:
+                sequence_events.append({
+                    "id": event.id,
+                    "match_id": event.match_id,
+                    "time1": event.time1,
+                    "time2": event.time2,
+                    "type": event.type,
+                    "side1": event.side1,
+                    "side2": event.side2,
+                    "unum1": event.unum1,
+                    "unum2": event.unum2,
+                    "x1": event.x1,
+                    "y1": event.y1,
+                    "x2": event.x2,
+                    "y2": event.y2,
+                    "mode1": event.mode1,
+                    "success": event.success,
+                })
+            
+            sequences_data.append(sequence_events)
+            
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    processing_time = round(time.time() - start_time, 3)
+    print(f"⚡ EventSequence活用版 - 処理時間: {processing_time}秒, マッチング: {len(sequences_data)}シーケンス")
+
+    return render_template("event_sequence.html",
+                           sequences=sequences_data,
+                           team=selected_team or "不明",
+                           selected_type=selected_type,
+                           selected_match=selected_match,
+                           selected_unum=selected_unum,
+                           selected_success=selected_success,
+                           selected_mode=selected_mode,
+                           x_min=x_min, x_max=x_max,
+                           y_min=y_min, y_max=y_max,
+                           rects_json=rects_json,
+                           processing_time=processing_time)
+
+
+def event_sequence_filtered_fallback():
+    """EventSequenceテーブルが空の場合の従来実装（フォールバック）"""
     from sqlalchemy import or_, and_
     import json
 
@@ -703,15 +1090,14 @@ def event_sequence_filtered():
                 return True
         return False
 
-    # 連続イベント抽出
+    # 連続イベント抽出（従来ロジック）
     sequences = []
     current_sequence = []
     current_team = None
-    tracking = False  # 追跡中フラグ
+    tracking = False
     last_mode = None
 
     def end_current_sequence():
-        """現在のシーケンスを終了し、リストに追加する"""
         nonlocal current_sequence, current_team, tracking
         if current_sequence:
             sequences.append(current_sequence)
@@ -720,7 +1106,7 @@ def event_sequence_filtered():
         tracking = False
 
     for i, event in enumerate(filtered_events):
-        # 不自然なInterception（得点後の戻し処理など）を除外
+        # 不自然なInterception除外
         is_reset = (
             event.type == "Interception" and
             event.mode1 == "play_on" and
@@ -728,71 +1114,57 @@ def event_sequence_filtered():
         )
 
         if is_reset:
-            # 現在のシーケンスがあれば終了
             if tracking and current_sequence:
                 end_current_sequence()
             last_mode = event.mode1
             continue
 
         if not tracking:
-            # 起点として認めるか？（矩形条件があるなら矩形内のみ）
             if rects and not is_in_any_rect(event):
                 continue
 
-            # neutralまたは相手チームへの単発イベントは個別シーケンス
             if event.side2 == "neutral" or (event.side2 and event.side2 != event.side1):
-                sequences.append([event])  # 1件だけのシーケンスとして記録
+                sequences.append([event])
                 last_mode = event.mode1
                 continue
 
-            # 追跡開始
             current_sequence = [event]
             current_team = event.side1
             tracking = True
             last_mode = event.mode1
             continue
         
-        # 続行前に、前のイベントとの間に他チームのイベントがないかチェック
         if (tracking and current_sequence and 
             has_interrupting_events(current_sequence[-1].time1, event.time1, current_team)):
-            # 間に他チームのイベントがある場合はシーケンスを終了
             end_current_sequence()
-            # 新しいシーケンスとして開始するかチェック
             if rects and not is_in_any_rect(event):
                 last_mode = event.mode1
                 continue
-            # neutralまたは相手チームへの単発イベント処理
             if event.side2 == "neutral" or (event.side2 and event.side2 != event.side1):
                 sequences.append([event])
                 last_mode = event.mode1
                 continue
-            # 新しいシーケンス開始
             current_sequence = [event]
             current_team = event.side1
             tracking = True
             last_mode = event.mode1
             continue
         
-        # チームが変わった場合
         if event.side1 and event.side1 != current_team:
             end_current_sequence()
-            # 新しいシーケンスとして開始するかチェック
             if rects and not is_in_any_rect(event):
                 last_mode = event.mode1
                 continue
-            # neutralまたは相手チームへの単発イベント処理
             if event.side2 == "neutral" or (event.side2 and event.side2 != event.side1):
                 sequences.append([event])
                 last_mode = event.mode1
                 continue
-            # 新しいシーケンス開始
             current_sequence = [event]
             current_team = event.side1
             tracking = True
             last_mode = event.mode1
             continue
 
-        # ボールが neutral または相手チームに渡ったら終了
         if (event.side2 == "neutral" or 
             (event.side2 and event.side2 != current_team) or 
             (event.side1 and event.side1 != current_team)):
@@ -801,15 +1173,13 @@ def event_sequence_filtered():
             last_mode = event.mode1
             continue
 
-        # 続行
         current_sequence.append(event)
         last_mode = event.mode1
 
-    # 最後のシーケンスが残っていれば追加
     if tracking and current_sequence:
         sequences.append(current_sequence)
 
-    # JSON変換用
+    # シリアライズ
     def serialize_event(event):
         return {
             "id": event.id,
@@ -841,7 +1211,8 @@ def event_sequence_filtered():
                            selected_mode=selected_mode,
                            x_min=x_min, x_max=x_max,
                            y_min=y_min, y_max=y_max,
-                           rects_json=rects_json)
+                           rects_json=rects_json,
+                           fallback_mode=True)
 
 @main.route('/interactive_gis_map')
 def interactive_gis_map():
@@ -849,7 +1220,7 @@ def interactive_gis_map():
     start_time = time.time()
     print("🔍 interactive_gis_map called")
     
-    # event_searchと同様のデータ処理ロジックを追加
+    # イベントフィルタリング機能
     selected_type = request.args.get('event_type')
     selected_team = request.args.get('team')
     selected_unum = request.args.get('unum')
@@ -886,7 +1257,7 @@ def interactive_gis_map():
 
     query = EventData.query
 
-    # フィルタ処理（event_searchと同じ）
+    # フィルタ処理
     if selected_type:
         query = query.filter(EventData.type == selected_type)
     if selected_team:
@@ -1134,12 +1505,39 @@ def interactive_gis_map():
     modes = [m[0] for m in db.session.query(EventData.mode1).distinct().order_by(EventData.mode1)]
     unums = [u[0] for u in db.session.query(EventData.unum1).distinct().order_by(EventData.unum1) if u[0] is not None]
 
+    # EventSequenceデータも取得（GIS情報付き）
+    sequence_query = EventSequence.query
+    if selected_match and selected_match != "all":
+        sequence_query = sequence_query.filter(EventSequence.match_id == selected_match)
+    if selected_team:
+        sequence_query = sequence_query.filter(EventSequence.team == selected_team)
+    
+    sequences = sequence_query.limit(100).all()  # 表示制限
+    
+    # シーケンスデータをJSONシリアライズ可能な形式に変換
+    sequences_data = []
+    for seq in sequences:
+        seq_data = {
+            'id': seq.id,
+            'team': seq.team,
+            'sequence_number': seq.sequence_number,
+            'start_time': seq.start_time,
+            'end_time': seq.end_time,
+            'event_count': seq.event_count,
+            'trajectory_wkt': seq.trajectory_wkt,
+            'start_point_wkt': seq.start_point_wkt,
+            'end_point_wkt': seq.end_point_wkt,
+            'coverage_area_wkt': seq.coverage_area_wkt
+        }
+        sequences_data.append(seq_data)
+
     # 処理時間を計測（データ取得後）
     processing_time = round(time.time() - start_time, 3)
 
     return render_template('interactive_gis_map.html',
                            events=map_events,  # マップ表示用データ
                            list_events=list_events,  # イベントリスト表示用データ
+                           sequences=sequences_data,  # EventSequenceデータ（GIS情報付き）
                            event_types=event_types,
                            teams=teams,
                            modes=modes,
@@ -1455,173 +1853,7 @@ def download_search_results_csv():
     print(f"📄 CSV exported: {len(events)} events in {processing_time}s -> {filename}")
     return response
 
-@main.route('/download_event_search_csv')
-def download_event_search_csv():
-    """通常の検索結果をCSVファイルとしてダウンロード"""
-    from datetime import datetime
-    start_time = time.time()
-    
-    # event_search関数と同じフィルタロジックを使用してクエリを構築
-    query = db.session.query(EventData)
-    
-    # 基本フィルタ処理
-    event_type = request.args.get("event_type")
-    if event_type:
-        query = query.filter(EventData.type == event_type)
-    
-    team = request.args.get("team")
-    if team:
-        query = query.filter(EventData.side1 == team)
-    
-    unum = request.args.get("unum")
-    if unum:
-        try:
-            query = query.filter(EventData.unum1 == int(unum))
-        except ValueError:
-            pass
-    
-    match_id = request.args.get("match_id")
-    if match_id and match_id != "all":
-        query = query.filter(EventData.match_id == match_id)
-    
-    success = request.args.get("success")
-    if success:
-        if success == "true":
-            query = query.filter(EventData.success == True)
-        elif success == "false":
-            query = query.filter(EventData.success == False)
-    
-    mode = request.args.get("mode")
-    if mode:
-        query = query.filter(EventData.mode1 == mode)
-    
-    # 時間範囲フィルタ
-    min_time1 = request.args.get("min_time1")
-    if min_time1:
-        try:
-            min_time_val = float(min_time1)
-            query = query.filter(EventData.time1 >= min_time_val)
-        except ValueError:
-            pass
-    
-    max_time1 = request.args.get("max_time1")
-    if max_time1:
-        try:
-            max_time_val = float(max_time1)
-            query = query.filter(EventData.time1 <= max_time_val)
-        except ValueError:
-            pass
-    
-    # 座標範囲フィルタ
-    x_min = request.args.get("x_min")
-    if x_min:
-        try:
-            query = query.filter(EventData.x1 >= float(x_min))
-        except ValueError:
-            pass
-    
-    x_max = request.args.get("x_max")
-    if x_max:
-        try:
-            query = query.filter(EventData.x1 <= float(x_max))
-        except ValueError:
-            pass
-    
-    y_min = request.args.get("y_min")
-    if y_min:
-        try:
-            query = query.filter(EventData.y1 >= float(y_min))
-        except ValueError:
-            pass
-    
-    y_max = request.args.get("y_max")
-    if y_max:
-        try:
-            query = query.filter(EventData.y1 <= float(y_max))
-        except ValueError:
-            pass
-    
-    # 複数矩形範囲処理
-    rects_json = request.args.get("rects_json")
-    if rects_json:
-        try:
-            rects = json.loads(rects_json)
-            rect_filters = []
-            for r in rects:
-                rect_filters.append(and_(
-                    EventData.x1 >= r['x_min'],
-                    EventData.x1 <= r['x_max'],
-                    EventData.y1 >= r['y_min'],
-                    EventData.y1 <= r['y_max']
-                ))
-            if rect_filters:
-                query = query.filter(or_(*rect_filters))
-        except Exception as e:
-            print("矩形フィルタの処理エラー:", e)
-    
-    # データを取得（制限なし）
-    events = query.order_by(EventData.match_id, EventData.time1).all()
-    
-    # CSVファイルを作成
-    output = StringIO()
-    writer = csv.writer(output)
-    
-    # CSVヘッダー
-    headers = [
-        'Type1', 'Side1', 'Unum1', 'Time1', 'Mode1', 'X1', 'Y1', 
-        'Side2', 'Unum2', 'Time2', 'X2', 'Y2', 'Success', 'match_id'
-    ]
-    writer.writerow(headers)
-    
-    # データ行
-    for event in events:
-        writer.writerow([
-            event.type,
-            event.side1,
-            event.unum1 if event.unum1 is not None else '',
-            event.time1,
-            event.mode1 if event.mode1 else '',
-            event.x1,
-            event.y1,
-            event.side2 if event.side2 else '',
-            event.unum2 if event.unum2 is not None else '',
-            event.time2 if event.time2 is not None else '',
-            event.x2 if event.x2 is not None else '',
-            event.y2 if event.y2 is not None else '',
-            event.success if event.success is not None else '',
-            event.match_id
-        ])
-    
-    # ファイル名を生成
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename_parts = [f"event_search_results_{timestamp}"]
-    
-    # フィルタ情報をファイル名に追加
-    if event_type:
-        filename_parts.append(f"type_{event_type}")
-    if team:
-        filename_parts.append(f"team_{team}")
-    if match_id:
-        filename_parts.append(f"match_{match_id}")
-    if min_time1 or max_time1:
-        time_info = f"time_{min_time1 or '0'}-{max_time1 or 'inf'}"
-        filename_parts.append(time_info)
-    
-    filename = "_".join(filename_parts) + ".csv"
-    filename = filename.replace(" ", "_")  # スペースをアンダースコアに置換
-    
-    # レスポンスを作成
-    output.seek(0)
-    processing_time = round(time.time() - start_time, 3)
-    
-    response = Response(
-        output.getvalue(),
-        mimetype='text/csv',
-        headers={"Content-disposition": f"attachment; filename={filename}"}
-    )
-    
-    print(f"📄 Event search CSV exported: {len(events)} events in {processing_time}s -> {filename}")
-    return response
+
 
 @main.route('/tournament/<int:tournament_id>/add_match', methods=['GET', 'POST'])
 def add_match_to_tournament(tournament_id):
@@ -1640,18 +1872,17 @@ def add_match_to_tournament(tournament_id):
             return redirect(url_for('main.add_match_to_tournament', tournament_id=tournament_id))
         
         added_count = 0
+        skipped_count = 0
         for csv_match_id in selected_match_ids:
             # CSVのmatch_idからRCGファイル名を逆算
             rcg_filename = csv_match_id.replace('.event', '.rcg')
             
-            # 既に登録済みかチェック
-            existing_match = MatchResult.query.filter_by(
-                tournament_id=tournament_id,
-                rcg_filename=rcg_filename
-            ).first()
+            # データベース全体で既に登録済みかチェック（一意制約対応）
+            existing_match = MatchResult.query.filter_by(rcg_filename=rcg_filename).first()
             
             if existing_match:
-                print(f"⚠️ 単一追加 - 既に登録済みの試合をスキップ: {rcg_filename}")
+                skipped_count += 1
+                print(f"⚠️ 重複スキップ - 大会「{existing_match.tournament.name}」に既に登録済み: {rcg_filename}")
                 continue  # 既に登録済みの場合はスキップ
             
             # match_idから試合情報を抽出
@@ -1679,27 +1910,38 @@ def add_match_to_tournament(tournament_id):
                 print(f"試合追加エラー: {e}")
                 continue
         
-        if added_count > 0:
-            db.session.commit()
-            flash(f'✅ {added_count}試合を大会に追加しました。', 'success')
-        else:
-            flash('追加できる新しい試合がありませんでした。', 'info')
+        try:
+            if added_count > 0:
+                db.session.commit()
+                if skipped_count > 0:
+                    flash(f'✅ {added_count}試合を大会に追加しました。（{skipped_count}試合は既に他の大会に登録済みのためスキップされました）', 'success')
+                else:
+                    flash(f'✅ {added_count}試合を大会に追加しました。', 'success')
+            else:
+                if skipped_count > 0:
+                    flash(f'選択された{skipped_count}試合は全て既に他の大会に登録済みです。', 'warning')
+                else:
+                    flash('追加できる新しい試合がありませんでした。', 'info')
+        except Exception as e:
+            db.session.rollback()
+            print(f"単一追加 - データベースコミット時エラー: {e}")
+            flash('試合の追加中にエラーが発生しました。管理者にお問い合わせください。', 'error')
         
         return redirect(url_for('main.view_tournament', tournament_id=tournament_id))
     
     # GET リクエスト：利用可能な試合一覧を表示
-    # 既に登録済みの試合のmatch_idを取得
-    registered_matches = MatchResult.query.filter_by(tournament_id=tournament_id).all()
+    # データベース全体で既に登録済みの試合のrcg_filenameを取得
+    all_registered_matches = MatchResult.query.all()
     registered_match_ids = set()
     
-    for match in registered_matches:
+    for match in all_registered_matches:
         # RCGファイル名からmatch_idを逆算
         csv_match_id = match.rcg_filename.replace('.rcg.gz', '').replace('.rcg', '')
         if not csv_match_id.endswith('.event'):
             csv_match_id += '.event'
         registered_match_ids.add(csv_match_id)
     
-    print(f"🔍 単一追加 - 登録済みmatch_ids: {registered_match_ids}")
+    print(f"🔍 データベース全体 - 登録済みmatch_ids: {len(registered_match_ids)}件")
     
     # 利用可能な全CSVデータを取得（match_id順でソート）
     available_matches = db.session.query(
@@ -1749,7 +1991,7 @@ def add_match_to_tournament(tournament_id):
     return render_template('add_match_to_tournament.html', 
                          tournament=tournament,
                          available_matches=unregistered_matches,
-                         registered_count=len(registered_matches))
+                         registered_count=len(registered_match_ids))
 
 @main.route('/tournament/<int:tournament_id>/delete_match/<int:match_id>', methods=['POST'])
 def delete_match_from_tournament(tournament_id, match_id):
@@ -1772,3 +2014,83 @@ def delete_match_from_tournament(tournament_id, match_id):
         flash(f'❌ 試合削除に失敗しました: {e}', 'error')
     
     return redirect(url_for('main.view_tournament', tournament_id=tournament_id))
+
+@main.route('/api/event/<int:event_id>/sequence')
+def get_event_sequence(event_id):
+    """指定されたイベントが含まれるシーケンスを取得（EventSequenceテーブル活用）"""
+    import json
+    import time
+    
+    start_time = time.time()
+    
+    event = EventData.query.get_or_404(event_id)
+    
+    # EventSequenceテーブルから該当シーケンスを検索
+    sequences = EventSequence.query.filter_by(
+        match_id=event.match_id,
+        team=event.side1
+    ).all()
+    
+    # イベントIDがevent_idsに含まれるシーケンスを検索
+    target_sequence = None
+    for seq in sequences:
+        if seq.event_ids:
+            try:
+                event_ids = json.loads(seq.event_ids)
+                if event_id in event_ids:
+                    target_sequence = seq
+                    break
+            except (json.JSONDecodeError, TypeError):
+                continue
+    
+    if not target_sequence:
+        return jsonify({
+            'error': 'Sequence not found in database',
+            'fallback': True,
+            'message': f'Event {event_id} not found in any EventSequence for match {event.match_id}, team {event.side1}'
+        }), 404
+    
+    # シーケンスに含まれるイベントデータを取得
+    try:
+        event_ids = json.loads(target_sequence.event_ids)
+        sequence_events = EventData.query.filter(
+            EventData.id.in_(event_ids)
+        ).order_by(EventData.time1).all()
+        
+        processing_time = round(time.time() - start_time, 3)
+        
+        return jsonify({
+            'sequence_info': {
+                'id': target_sequence.id,
+                'team': target_sequence.team,
+                'sequence_number': target_sequence.sequence_number,
+                'start_time': target_sequence.start_time,
+                'end_time': target_sequence.end_time,
+                'event_count': target_sequence.event_count,  # event_countフィールド活用
+                'duration': target_sequence.end_time - target_sequence.start_time
+            },
+            'events': [{
+                'id': e.id,
+                'time1': e.time1,
+                'time2': e.time2,
+                'type': e.type,
+                'side1': e.side1,
+                'side2': e.side2,
+                'unum1': e.unum1,
+                'unum2': e.unum2,
+                'x1': e.x1,
+                'y1': e.y1,
+                'x2': e.x2,
+                'y2': e.y2,
+                'mode1': e.mode1,
+                'success': e.success
+            } for e in sequence_events],
+            'processing_time': processing_time,
+            'source': 'EventSequence_database'
+        })
+        
+    except (json.JSONDecodeError, TypeError) as e:
+        return jsonify({
+            'error': f'Invalid event_ids format in sequence {target_sequence.id}: {str(e)}',
+            'fallback': True
+        }), 500

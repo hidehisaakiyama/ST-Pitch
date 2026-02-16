@@ -34,15 +34,6 @@ class MatchResult(db.Model):
     def __repr__(self):
         return f"<Match {self.team1} vs {self.team2} at {self.datetime}>"
 
-class MatchEvent(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    match_id = db.Column(db.Integer, db.ForeignKey('match_result.id'), nullable=False)
-    cycle = db.Column(db.Integer, nullable=False)
-    event_type = db.Column(db.String(50), nullable=False)
-    team = db.Column(db.String(10))
-    player = db.Column(db.String(50))
-    description = db.Column(db.Text)
-
 
 class EventData(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -111,6 +102,34 @@ class EventSequence(db.Model):
     
     # 関連するイベントのIDリスト（JSON形式）
     event_ids = db.Column(db.Text)
+    
+    @property
+    def trajectory_wkt(self):
+        """軌跡のWKT表現を返す"""
+        if self.trajectory:
+            return str(self.trajectory)
+        return None
+    
+    @property
+    def start_point_wkt(self):
+        """開始地点のWKT表現を返す"""
+        if self.start_point:
+            return str(self.start_point)
+        return None
+    
+    @property
+    def end_point_wkt(self):
+        """終了地点のWKT表現を返す"""
+        if self.end_point:
+            return str(self.end_point)
+        return None
+    
+    @property
+    def coverage_area_wkt(self):
+        """カバレッジエリアのWKT表現を返す"""
+        if self.coverage_area:
+            return str(self.coverage_area)
+        return None
     
     def __repr__(self):
         return f"<EventSequence {self.team} #{self.sequence_number} ({self.start_time}-{self.end_time})>"
