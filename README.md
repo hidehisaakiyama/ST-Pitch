@@ -58,14 +58,16 @@ The following steps are based on Ubuntu Linux 24.04 LTS. Please adjust the comma
     ln -s dot.env .env
    ```
    
-   2. Edit the `.env` file with your actual database credentials:
+   2. Edit `.env` and replace the placeholders with your actual values:
    ```bash
-    # Edit .env and replace the placeholders with your actual values
+    # Database Configuration
     DB_NAME=your_db
     DB_USER=your_user
     DB_PASSWORD=your_password
     DB_HOST=localhost
     DB_PORT=5432
+
+    # Flask Configuration
     SECRET_KEY=your_secret_key
    ```
    
@@ -73,7 +75,7 @@ The following steps are based on Ubuntu Linux 24.04 LTS. Please adjust the comma
 
 2. Run the Flask application.
    ```bash
-    python run.py
+   ./run.sh
    ```
 3. Access the web application by navigating to `http://localhost:5000` in your web browser.
 
