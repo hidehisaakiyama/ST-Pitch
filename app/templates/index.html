@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ChronoPitch - サッカー試合データ分析</title>
+    <title>Spatial Temporal Pitch - Soccer Analytics</title>
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
 </head>
 <body>
@@ -22,8 +22,8 @@
 
     <div class="row">
         <div class="col-md-12 text-center mb-4">
-            <h1 class="display-4">⚽ ChronoPitch</h1>
-            <p class="lead">サッカー試合データの高度な分析・可視化システム</p>
+            <h1 class="display-4">⚽ Spatial Temporal Pitch</h1>
+            <p class="lead">Advanced Analysis and Visualization System for Soccer Match Data</p>
         </div>
     </div>
 
@@ -32,18 +32,18 @@
         <div class="col-md-6 mb-3">
             <div class="card h-100">
                 <div class="card-body text-center">
-                    <h4 class="card-title">🏆 大会・試合選択</h4>
-                    <p class="card-text">大会から特定の試合を選択してGIS分析</p>
-                    <a href="{{ url_for('main.tournament_match_selection') }}" class="btn btn-primary btn-lg">試合を選択</a>
+                    <h4 class="card-title">🏆 Tournament & Match Selection</h4>
+                    <p class="card-text">Select a specific match from a tournament for GIS analysis</p>
+                    <a href="{{ url_for('main.tournament_match_selection') }}" class="btn btn-primary btn-lg">Select Match</a>
                 </div>
             </div>
         </div>
         <div class="col-md-6 mb-3">
             <div class="card h-100">
                 <div class="card-body text-center">
-                    <h4 class="card-title">🗺️ インタラクティブGIS</h4>
-                    <p class="card-text">全データの高度な空間分析・可視化</p>
-                    <a href="{{ url_for('main.interactive_gis_map') }}" class="btn btn-success btn-lg">GIS分析</a>
+                    <h4 class="card-title">🗺️ Interactive GIS</h4>
+                    <p class="card-text">Advanced spatial analysis and visualization of all data</p>
+                    <a href="{{ url_for('main.interactive_gis_map') }}" class="btn btn-success btn-lg">GIS Analysis</a>
                 </div>
             </div>
         </div>
@@ -54,7 +54,7 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header">
-                    <h5>📂 CSVファイルアップロード</h5>
+                    <h5>📂 CSV File Upload</h5>
                 </div>
                 <div class="card-body">
                     <div class="row">
@@ -63,18 +63,18 @@
                                 <div class="me-3 flex-grow-1">
                                     <input type="file" name="file" class="form-control" accept=".csv" multiple required>
                                     <small class="form-text text-muted">
-                                        📋 event.csvファイルを選択してください（複数ファイル同時アップロード対応）
+                                        📋 Please select event.csv files (multiple file upload supported)
                                     </small>
                                 </div>
                                 <button type="submit" class="btn btn-primary">
-                                    <i class="fas fa-upload"></i> アップロード
+                                    <i class="fas fa-upload"></i> Upload
                                 </button>
                             </form>
                         </div>
                         <div class="col-md-4">
                             <div class="alert alert-info mb-0" style="font-size: 0.9em;">
-                                <strong>📝 CSV形式:</strong><br>
-                                Type, Side1, Unum1, Time1, Mode1, X1, Y1, Side2, Unum2, Time2, X2, Y2, Success のカラムが必要です
+                                <strong>📝 CSV Format:</strong><br>
+                                The columns Type, Side1, Unum1, Time1, Mode1, X1, Y1, Side2, Unum2, Time2, X2, Y2, Success are required.
                             </div>
                         </div>
                     </div>
@@ -84,20 +84,20 @@
                     <div class="row mt-3">
                         <div class="col-md-6">
                             <div class="alert alert-success">
-                                <strong>📊 イベントデータ</strong><br>
-                                {{ match_data|length }} 件のマッチデータ
+                                <strong>📊 Event Data</strong><br>
+                                {{ match_data|length }} records of match data ({{ match_data|length // 1000 }}K records)
                             </div>
                         </div>
                         <div class="col-md-6">
                             <div class="alert alert-info">
-                                <strong>🔗 シーケンスデータ</strong><br>
-                                {{ total_sequences }} 個のシーケンス ({{ sequence_matches }} 試合分)
+                                <strong>🔗 Sequence Data</strong><br>
+                                {{ total_sequences }} sequences ({{ sequence_matches }} matches with sequence data)
                             </div>
                         </div>
                     </div>
                     <div class="row">
                         <div class="col-md-12 text-center">
-                            <a href="{{ url_for('main.manage_csv') }}" class="btn btn-outline-secondary">⚙️ データ管理</a>
+                            <a href="{{ url_for('main.manage_csv') }}" class="btn btn-outline-secondary">⚙️ Data Management</a>
                         </div>
                     </div>
                     {% endif %}
@@ -111,24 +111,24 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header">
-                    <h5>⚙️ 大会管理</h5>
+                    <h5>⚙️ Tournament Management</h5>
                 </div>
                 <div class="card-body">
                     <div class="row">
                         <div class="col-md-12 text-center">
-                            <a href="/add_tournament" class="btn btn-success btn-lg">➕ 新しい大会を追加</a>
+                            <a href="/add_tournament" class="btn btn-success btn-lg">➕ Add New Tournament</a>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
-    <!-- 登録済み大会 -->
+    <!-- Registered Tournaments -->
     <div class="row">
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header">
-                    <h5>📅 登録済みの大会</h5>
+                    <h5>📅 Registered Tournaments</h5>
                 </div>
                 <div class="card-body">
                     {% if tournaments %}
@@ -136,11 +136,11 @@
                             <table class="table table-striped">
                                 <thead>
                                     <tr>
-                                        <th>大会名</th>
-                                        <th>年</th>
-                                        <th>期間</th>
-                                        <th>試合数</th>
-                                        <th>操作</th>
+                                        <th>Tournament Name</th>
+                                        <th>Year</th>
+                                        <th>Period</th>
+                                        <th>Number of Matches</th>
+                                        <th>Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -160,11 +160,11 @@
                                         </td>
                                         <td>
                                             <a href="{{ url_for('main.view_tournament', tournament_id=tournament.id) }}" 
-                                               class="btn btn-sm btn-outline-primary me-1">詳細</a>
+                                               class="btn btn-sm btn-outline-primary me-1">View Details</a>
                                             <form action="{{ url_for('main.delete_tournament', tournament_id=tournament.id) }}" 
                                                   method="post" style="display:inline;">
                                                 <button type="submit" class="btn btn-sm btn-outline-danger"
-                                                        onclick="return confirm('本当に削除しますか？');">削除</button>
+                                                        onclick="return confirm('Are you sure you want to delete this tournament?');">Delete</button>
                                             </form>
                                         </td>
                                     </tr>
@@ -174,7 +174,7 @@
                         </div>
                     {% else %}
                         <div class="alert alert-info">
-                            <p class="mb-0">まだ大会が登録されていません。<a href="/add_tournament">大会を追加</a>してください。</p>
+                            <p class="mb-0">No tournaments registered yet. <a href="/add_tournament">Add a tournament</a>.</p>
                         </div>
                     {% endif %}
                 </div>

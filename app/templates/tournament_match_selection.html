@@ -1,21 +1,21 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>大会・試合選択 - ChronoPitch</title>
+    <title>Tournament & Match Selection - ST-Pitch</title>
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
 </head>
 <body>
     <div class="container mt-4">
-        <h1 class="mb-4">🏆 大会・試合選択</h1>
+        <h1 class="mb-4">🏆 Tournament & Match Selection</h1>
         
         <!-- 大会選択セクション -->
         <div class="row mb-4">
             <div class="col-md-12">
                 <div class="card">
                     <div class="card-header">
-                        <h4 class="card-title mb-0">📅 大会一覧</h4>
+                        <h4 class="card-title mb-0">📅 Tournament List</h4>
                     </div>
                     <div class="card-body">
                         {% if tournaments %}
@@ -30,11 +30,11 @@
                                                 <small class="text-muted">
                                                     📅 {{ tournament.start_date.strftime('%Y-%m-%d') }} ~ {{ tournament.end_date.strftime('%Y-%m-%d') }}
                                                 </small><br>
-                                                <strong>{{ tournament.matches|length }} 試合</strong>
+                                                <strong>{{ tournament.matches|length }} matches</strong>
                                             </p>
                                         </div>
                                         <div class="card-footer">
-                                            <small class="text-muted">{{ tournament.year }}年</small>
+                                            <small class="text-muted">{{ tournament.year }}</small>
                                         </div>
                                     </div>
                                 </div>
@@ -42,9 +42,9 @@
                             </div>
                         {% else %}
                             <div class="alert alert-info">
-                                <h5>大会がまだ登録されていません</h5>
-                                <p>まず大会を登録してください。</p>
-                                <a href="{{ url_for('main.add_tournament') }}" class="btn btn-primary">大会を追加</a>
+                                <h5>No tournaments registered yet</h5>
+                                <p>Please register a tournament first.</p>
+                                <a href="{{ url_for('main.add_tournament') }}" class="btn btn-primary">Add Tournament</a>
                             </div>
                         {% endif %}
                     </div>
@@ -57,9 +57,9 @@
             <div class="col-md-12">
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h4 class="card-title mb-0">⚽ 試合一覧</h4>
+                        <h4 class="card-title mb-0">⚽ Match List</h4>
                         <button class="btn btn-sm btn-outline-secondary" onclick="clearTournamentSelection()">
-                            ← 大会選択に戻る
+                            &larr; Back to Tournament Selection
                         </button>
                     </div>
                     <div class="card-body">
@@ -74,9 +74,9 @@
         <!-- ナビゲーション -->
         <div class="row mt-4">
             <div class="col-md-12 text-center">
-                <a href="{{ url_for('main.index') }}" class="btn btn-outline-primary me-2">🏠 ホーム</a>
-                <a href="{{ url_for('main.add_tournament') }}" class="btn btn-outline-success me-2">➕ 大会追加</a>
-                <a href="{{ url_for('main.interactive_gis_map') }}" class="btn btn-outline-info">🗺️ 全データGIS表示</a>
+                <a href="{{ url_for('main.index') }}" class="btn btn-outline-primary me-2">🏠 Home</a>
+                <a href="{{ url_for('main.add_tournament') }}" class="btn btn-outline-success me-2">➕ Add Tournament</a>
+                <a href="{{ url_for('main.interactive_gis_map') }}" class="btn btn-outline-info">🗺️ Full Data GIS Display</a>
             </div>
         </div>
     </div>
@@ -89,7 +89,7 @@
         // match_idからシミュレーション情報を抽出
         function getSimulationInfo(matchId) {
             try {
-                // 例: "0803-0011-aeteam2024-cyrus2024-0003-sim03.event" → "0003-sim03"
+                // 例: "0803-0011-aeteam2024-cyrus2024-0003-sim03.event" -> "0003-sim03"
                 const parts = matchId.split('-');
                 if (parts.length >= 6) {
                     const seqNumber = parts[parts.length - 2]; // 0003
@@ -127,7 +127,7 @@
                 })
                 .catch(error => {
                     console.error('Error fetching matches:', error);
-                    showError('試合一覧の取得に失敗しました');
+                    showError('Failed to retrieve match list');
                 });
         }
         
@@ -139,8 +139,8 @@
             if (matches.length === 0) {
                 matchesList.innerHTML = `
                     <div class="alert alert-warning">
-                        <h5>試合がまだ登録されていません</h5>
-                        <p>この大会にはまだ試合が登録されていません。</p>
+                        <h5>No matches registered yet</h5>
+                        <p>No matches have been registered for this tournament yet.</p>
                     </div>
                 `;
             } else {
@@ -163,7 +163,7 @@
                                     <p class="card-text">
                                         <small class="text-muted">
                                             📅 ${matchDate}<br>
-                                            📊 ${eventCount} イベント
+                                            📊 ${eventCount} events
                                         </small><br>
                                         <small class="text-primary">
                                             🏷️ <strong>${match.match_id}</strong>
@@ -172,7 +172,7 @@
                                 </div>
                                 <div class="card-footer">
                                     <div class="d-flex justify-content-between align-items-center">
-                                        <small class="text-success">🖱️ クリックでGIS表示</small>
+                                        <small class="text-success">🖱️ Click for GIS display</small>
                                         <small class="text-info">${getSimulationInfo(match.match_id)}</small>
                                     </div>
                                 </div>

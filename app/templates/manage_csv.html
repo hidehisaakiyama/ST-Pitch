@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CSV管理 - ChronoPitch</title>
+    <title>CSV Management - ST-Pitch</title>
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
 </head>
 <body>
@@ -25,11 +25,11 @@
         <div class="col-md-12">
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h1 class="h2">📂 CSVファイル管理</h1>
-                    <p class="text-muted">登録済みのイベントデータを管理・削除できます</p>
+                    <h1 class="h2">📂 CSV File Management</h1>
+                    <p class="text-muted">Manage and delete registered event data</p>
                 </div>
                 <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">
-                    🏠 トップページに戻る
+                    🏠 Back to Top Page
                 </a>
             </div>
         </div>
@@ -40,24 +40,24 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">📋 登録済みイベントデータ</h5>
+                    <h5 class="mb-0">📋 Registered Event Data</h5>
                     {% if match_data %}
-                    <span class="badge bg-primary">{{ match_data|length }} 件</span>
+                    <span class="badge bg-primary">{{ match_data|length }} items</span>
                     {% endif %}
                 </div>
                 <div class="card-body">
                     {% if match_data %}
                         <div class="alert alert-info mb-3">
-                            <strong>⏱️ データ取得時間: {{ processing_time }}秒</strong> | 
-                            <strong>📊 登録データ: {{ match_data|length }}試合分</strong>
+                            <strong>⏱️ Data Retrieval Time: {{ processing_time }} seconds</strong> | 
+                            <strong>📊 Registered Data: {{ match_data|length }} matches</strong>
                         </div>
                         <div class="table-responsive">
                             <table class="table table-hover">
                                 <thead class="table-light">
                                     <tr>
                                         <th style="width: 60%">Match ID</th>
-                                        <th style="width: 20%">イベント数</th>
-                                        <th style="width: 20%">操作</th>
+                                        <th style="width: 20%">Event Count</th>
+                                        <th style="width: 20%">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -73,8 +73,8 @@
                                             <form method="post" action="{{ url_for('main.delete_match_events') }}" style="display:inline;">
                                                 <input type="hidden" name="match_id" value="{{ match.match_id }}">
                                                 <button type="submit" class="btn btn-sm btn-outline-danger" 
-                                                        onclick="return confirm('{{ match.match_id }}のイベントデータ（{{ match.event_count }}件）を完全に削除しますか？\n\nこの操作は元に戻せません。');">
-                                                    🗑️ 削除
+                                                        onclick="return confirm('Are you sure you want to completely delete the event data for {{ match.match_id }} ({{ match.event_count }} items)?\n\nThis action cannot be undone.');">
+                                                    🗑️ Delete
                                                 </button>
                                             </form>
                                         </td>
@@ -88,25 +88,25 @@
                         <div class="mt-4 pt-3 border-top">
                             <div class="row">
                                 <div class="col-md-6">
-                                    <h6 class="text-danger">⚠️ 危険な操作</h6>
-                                    <small class="text-muted">すべてのイベントデータを一度に削除します</small>
+                                    <h6 class="text-danger">⚠️ Dangerous Operations</h6>
+                                    <small class="text-muted">Delete all event data at once</small>
                                     <div class="mt-2">
                                         <form method="post" action="{{ url_for('main.delete_all_events') }}" style="display:inline;">
                                             <button type="submit" class="btn btn-danger" 
-                                                    onclick="return confirm('⚠️ 警告\n\nすべてのイベントデータ（{{ match_data|length }}件のmatch_id）を完全に削除しますか？\n\nこの操作は元に戻せません！');">
-                                                🗑️ 全データ削除
+                                                    onclick="return confirm('⚠️ Warning\n\nAre you sure you want to completely delete all event data ({{ match_data|length }} match_ids)?\n\nThis action cannot be undone!');">
+                                                🗑️ Delete All Data
                                             </button>
                                         </form>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
-                                    <h6 class="text-info">🔍 分析機能</h6>
-                                    <small class="text-muted">全試合のシーケンス分析を実行します</small>
+                                    <h6 class="text-info">🔍 Analysis Features</h6>
+                                    <small class="text-muted">Execute sequence analysis for all matches</small>
                                     <div class="mt-2">
                                         <form method="post" action="{{ url_for('main.generate_all_sequences') }}" style="display:inline;">
                                             <button type="submit" class="btn btn-info" 
-                                                    onclick="return confirm('📊 全試合のシーケンス分析を実行します。処理に時間がかかる場合があります。続行しますか？');">
-                                                🔍 シーケンス生成
+                                                    onclick="return confirm('📊 Execute sequence analysis for all matches. This may take some time. Continue?');">
+                                                🔍 Generate Sequences
                                             </button>
                                         </form>
                                     </div>
@@ -120,10 +120,10 @@
                                     <i class="fas fa-info-circle fa-2x"></i>
                                 </div>
                                 <div>
-                                    <h6 class="alert-heading">データがありません</h6>
-                                    <p class="mb-0">まだイベントデータがアップロードされていません。</p>
+                                    <h6 class="alert-heading">No Data</h6>
+                                    <p class="mb-0">No event data has been uploaded yet.</p>
                                     <small class="text-muted">
-                                        <a href="{{ url_for('main.index') }}" class="alert-link">トップページ</a>からCSVファイルをアップロードしてください。
+                                        Please upload CSV files from the <a href="{{ url_for('main.index') }}" class="alert-link">top page</a>.
                                     </small>
                                 </div>
                             </div>

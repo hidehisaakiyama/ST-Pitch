@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive GIS Soccer Field - ChronoPitch</title>
+    <title>Interactive GIS Soccer Field - ST-Pitch</title>
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/leaflet.css') }}" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/leaflet.draw.css') }}" />
@@ -625,52 +625,52 @@
                 <!-- XY座標検索行 -->
                 <div class="row mt-2" id="coordinateSearchRow">
                     <div class="col-md-2">
-                        <label for="rect_xmin" class="form-label">X Min (西)</label>
+                        <label for="rect_xmin" class="form-label">X Min (West)</label>
                         <input type="number" class="form-control" id="rect_xmin" name="rect_xmin" 
                                step="0.1" min="-52.5" max="52.5" placeholder="-52.5"
                                value="{{ request.args.get('rect_xmin', '') }}">
-                        <div class="form-text">西端 (-52.5)</div>
+                        <div class="form-text">West edge (-52.5)</div>
                     </div>
                     
                     <div class="col-md-2">
-                        <label for="rect_xmax" class="form-label">X Max (東)</label>
+                        <label for="rect_xmax" class="form-label">X Max (East)</label>
                         <input type="number" class="form-control" id="rect_xmax" name="rect_xmax" 
                                step="0.1" min="-52.5" max="52.5" placeholder="52.5"
                                value="{{ request.args.get('rect_xmax', '') }}">
-                        <div class="form-text">東端 (52.5)</div>
+                        <div class="form-text">East edge (52.5)</div>
                     </div>
                     
                     <div class="col-md-2">
-                        <label for="rect_ymin" class="form-label">Y Min (南)</label>
+                        <label for="rect_ymin" class="form-label">Y Min (South)</label>
                         <input type="number" class="form-control" id="rect_ymin" name="rect_ymin" 
                                step="0.1" min="-34" max="34" placeholder="-34"
                                value="{{ request.args.get('rect_ymin', '') }}">
-                        <div class="form-text">南端 (-34)</div>
+                        <div class="form-text">South edge (-34)</div>
                     </div>
                     
                     <div class="col-md-2">
-                        <label for="rect_ymax" class="form-label">Y Max (北)</label>
+                        <label for="rect_ymax" class="form-label">Y Max (North)</label>
                         <input type="number" class="form-control" id="rect_ymax" name="rect_ymax" 
                                step="0.1" min="-34" max="34" placeholder="34"
                                value="{{ request.args.get('rect_ymax', '') }}">
-                        <div class="form-text">北端 (34)</div>
+                        <div class="form-text">North edge (34)</div>
                     </div>
                     
                     <div class="col-md-2 d-flex align-items-end">
-                        <button type="button" class="btn btn-info me-2" onclick="applyCoordinateSearch()">📐 座標検索</button>
-                        <button type="button" class="btn btn-outline-secondary" onclick="clearCoordinateInputs()">🗑️ クリア</button>
+                        <button type="button" class="btn btn-info me-2" onclick="applyCoordinateSearch()">📐 Coordinate Search</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="clearCoordinateInputs()">🗑️ Clear</button>
                     </div>
                     
                     <div class="col-md-2">
-                        <label for="coordinate_preset" class="form-label">📐 座標プリセット</label>
+                        <label for="coordinate_preset" class="form-label">📐 Coordinate Presets</label>
                         <select class="form-select" id="coordinate_preset" onchange="applyCoordinatePreset()">
-                            <option value="">カスタム座標</option>
-                            <option value="full_field">フィールド全体</option>
-                            <option value="left_half">左ハーフ</option>
-                            <option value="right_half">右ハーフ</option>
-                            <option value="center_circle">センターサークル</option>
-                            <option value="left_penalty">左ペナルティエリア</option>
-                            <option value="right_penalty">右ペナルティエリア</option>
+                            <option value="">Custom Coordinates</option>
+                            <option value="full_field">Full Field</option>
+                            <option value="left_half">Left Half</option>
+                            <option value="right_half">Right Half</option>
+                            <option value="center_circle">Center Circle</option>
+                            <option value="left_penalty">Left Penalty Area</option>
+                            <option value="right_penalty">Right Penalty Area</option>
                         </select>
                     </div>
                 </div>
@@ -769,7 +769,7 @@
             <div class="legend" id="legend">
                 <div class="legend-header d-flex justify-content-between align-items-center">
                     <h6 class="mb-0">Legend</h6>
-                    <button class="btn btn-sm btn-outline-secondary legend-toggle" id="legendToggle" onclick="toggleLegend()" title="クリックで凡例を表示/非表示">
+                    <button class="btn btn-sm btn-outline-secondary legend-toggle" id="legendToggle" onclick="toggleLegend()" title="Show or hide the legend">
                         <span id="legendToggleIcon">−</span>
                     </button>
                 </div>
@@ -788,13 +788,13 @@
             <!-- モバイル用の説明パネル（デスクトップでは非表示） -->
             <div class="mobile-help-panel d-md-none" style="position: absolute; top: 10px; left: 10px; right: 10px; background: rgba(255,255,255,0.95); padding: 8px; border-radius: 5px; font-size: 12px; z-index: 999; display: none;" id="mobileHelp">
                 <div class="d-flex justify-content-between align-items-center">
-                    <strong>📱 モバイル操作ヘルプ</strong>
+                    <strong>📱 Mobile Help</strong>
                     <button class="btn btn-sm btn-outline-secondary" onclick="toggleMobileHelp()" style="font-size: 10px; padding: 2px 6px;">×</button>
                 </div>
                 <div class="mt-2">
-                    • <strong>Legend</strong>: 下の「−」ボタンで表示切替<br>
-                    • <strong>図形描画</strong>: 左上のツールを使用<br>
-                    • <strong>検索実行</strong>: 🔍ボタンをタップ
+                    • <strong>Legend</strong>: Use the "−" button below to toggle it<br>
+                    • <strong>Draw Shapes</strong>: Use the tools in the upper-left corner<br>
+                    • <strong>Run Search</strong>: Tap the 🔍 button
                 </div>
             </div>
         </div>
@@ -803,7 +803,7 @@
         {% if events %}
         <div class="mt-4">
             <div class="alert alert-info d-flex justify-content-between align-items-center mb-3">
-                <span><strong>🕐 検索時間: {{ processing_time }}秒</strong></span>
+                <span><strong>🕐 Search Time: {{ processing_time }}s</strong></span>
             </div>
             <h4>📋 Event List</h4>
             <div class="table-responsive">
@@ -1534,8 +1534,8 @@
                 // RoboCup座標からマップ座標に変換
                 // RoboCup: x1=東西(-52.5~52.5), y1=南北(-34~34)
                 // Leaflet: lng=東西(0~105), lat=南北(0~68)
-                const eventLng = event.x1 + 52.5;  // RoboCup X → Leaflet lng
-                const eventLat = event.y1 + 34;    // RoboCup Y → Leaflet lat  
+                const eventLng = event.x1 + 52.5;  // RoboCup X &rarr; Leaflet lng
+                const eventLat = event.y1 + 34;    // RoboCup Y &rarr; Leaflet lat
                 const eventLatLng = L.latLng(eventLat, eventLng);
                 
                 // 座標変換のデバッグ（最初の3個のイベント）
@@ -1580,7 +1580,7 @@
                         
                         // 最初の20個のイベントで詳細なデバッグ
                         if (originalEvents.indexOf(event) < 20) {
-                            console.log(`🔎 Event ${event.id}: RoboCup(${event.x1.toFixed(1)},${event.y1.toFixed(1)}) → Leaflet(${eventLatLng.lat.toFixed(1)},${eventLatLng.lng.toFixed(1)}) → ${isInside ? '✅ INSIDE' : '❌ OUTSIDE'}`);
+                            console.log(`🔎 Event ${event.id}: RoboCup(${event.x1.toFixed(1)},${event.y1.toFixed(1)}) -> Leaflet(${eventLatLng.lat.toFixed(1)},${eventLatLng.lng.toFixed(1)}) -> ${isInside ? '✅ INSIDE' : '❌ OUTSIDE'}`);
                         }
                         
                         // 予期しない結果（範囲外なのに INSIDE になっているもの）を詳細分析
@@ -1723,11 +1723,11 @@
             if (shapesVisible) {
                 toggleBtn.innerHTML = '👁️';
                 toggleBtn.className = 'shape-toggle-btn';
-                toggleBtn.title = 'Hide shapes (図形を非表示にする)';
+                toggleBtn.title = 'Hide shapes';
             } else {
                 toggleBtn.innerHTML = '👁️‍🗨️';
                 toggleBtn.className = 'shape-toggle-btn hidden';
-                toggleBtn.title = 'Show shapes (図形を表示する)';
+                toggleBtn.title = 'Show shapes';
             }
             
             // 範囲が描画されたことを記録（メッセージは表示しない）
@@ -1750,13 +1750,13 @@
                 map.addLayer(drawnItems);
                 toggleBtn.innerHTML = '👁️';
                 toggleBtn.className = 'shape-toggle-btn';
-                toggleBtn.title = 'Hide shapes (図形を非表示にする)';
+                toggleBtn.title = 'Hide shapes';
             } else {
                 // 図形を非表示
                 map.removeLayer(drawnItems);
                 toggleBtn.innerHTML = '👁️‍🗨️';
                 toggleBtn.className = 'shape-toggle-btn hidden';
-                toggleBtn.title = 'Show shapes (図形を表示する)';
+                toggleBtn.title = 'Show shapes';
             }
         }
         
@@ -1882,8 +1882,8 @@
                             type: 'circle',
                             data: {
                                 center: {
-                                    x: center.lng,  // lng → RoboCup X軸
-                                    y: center.lat   // lat → RoboCup Y軸
+                                    x: center.lng,  // lng -> RoboCup X軸
+                                    y: center.lat   // lat -> RoboCup Y軸
                                 },
                                 radius: shape.getRadius()
                             }
@@ -1907,8 +1907,8 @@
                             type: 'polygon',
                             data: {
                                 coordinates: latlngs.map(latlng => ({
-                                    x: latlng.lng,  // lng → RoboCup X軸
-                                    y: latlng.lat   // lat → RoboCup Y軸
+                                    x: latlng.lng,  // lng -> RoboCup X軸
+                                    y: latlng.lat   // lat -> RoboCup Y軸
                                 }))
                             }
                         });
@@ -1930,8 +1930,8 @@
                 const center = shape.getLatLng();
                 shapeData = {
                     center: {
-                        x: center.lng,  // Leaflet lng → RoboCup X軸 (東西方向: 0~105)
-                        y: center.lat   // Leaflet lat → RoboCup Y軸 (南北方向: 0~68)
+                        x: center.lng,  // Leaflet lng -> RoboCup X軸 (東西方向: 0~105)
+                        y: center.lat   // Leaflet lat -> RoboCup Y軸 (南北方向: 0~68)
                     },
                     radius: shape.getRadius()
                 };
@@ -1941,10 +1941,10 @@
                 const bounds = shape.getBounds();
                 shapeData = {
                     bounds: {
-                        north: bounds.getNorth(),  // lat → RoboCup Y軸の上端
-                        south: bounds.getSouth(),  // lat → RoboCup Y軸の下端
-                        east: bounds.getEast(),    // lng → RoboCup X軸の右端
-                        west: bounds.getWest()     // lng → RoboCup X軸の左端
+                        north: bounds.getNorth(),  // lat -> RoboCup Y軸の上端
+                        south: bounds.getSouth(),  // lat -> RoboCup Y軸の下端
+                        east: bounds.getEast(),    // lng -> RoboCup X軸の右端
+                        west: bounds.getWest()     // lng -> RoboCup X軸の左端
                     }
                 };
                 console.log(`🟩 Rectangle shape data: bounds={N(lat):${bounds.getNorth().toFixed(2)}, S(lat):${bounds.getSouth().toFixed(2)}, E(lng):${bounds.getEast().toFixed(2)}, W(lng):${bounds.getWest().toFixed(2)}}`);
@@ -1953,8 +1953,8 @@
                 const latlngs = shape.getLatLngs()[0];
                 shapeData = {
                     coordinates: latlngs.map(latlng => ({
-                        x: latlng.lng,  // lng → RoboCup X軸 (東西方向: 0~105)
-                        y: latlng.lat   // lat → RoboCup Y軸 (南北方向: 0~68)
+                        x: latlng.lng,  // lng -> RoboCup X軸 (東西方向: 0~105)
+                        y: latlng.lat   // lat -> RoboCup Y軸 (南北方向: 0~68)
                     }))
                 };
                 console.log(`🔸 Polygon shape data: ${latlngs.length} points, coords={${latlngs.map(ll => `(lat:${ll.lat.toFixed(1)},lng:${ll.lng.toFixed(1)})`).join(', ')}}`);
@@ -2022,16 +2022,16 @@
             }
             
             eventsToShow.forEach(event => {
-                // 座標変換（RoboCupフィールド座標 → マップ座標）
+                // 座標変換（RoboCupフィールド座標 -> マップ座標）
                 // RoboCup: x1=東西(-52.5~52.5), y1=南北(-34~34)
                 // Leaflet: lng=東西(0~105), lat=南北(0~68)
-                const startLng = (event.x1 + 52.5);  // RoboCup X → Leaflet lng
-                const startLat = (event.y1 + 34);    // RoboCup Y → Leaflet lat
+                const startLng = (event.x1 + 52.5);  // RoboCup X -> Leaflet lng
+                const startLat = (event.y1 + 34);    // RoboCup Y -> Leaflet lat
                 
                 let endLng = null, endLat = null;
                 if (event.x2 !== null && event.y2 !== null) {
-                    endLng = (event.x2 + 52.5);  // RoboCup X → Leaflet lng
-                    endLat = (event.y2 + 34);    // RoboCup Y → Leaflet lat
+                    endLng = (event.x2 + 52.5);  // RoboCup X -> Leaflet lng
+                    endLat = (event.y2 + 34);    // RoboCup Y -> Leaflet lat
                 }
                 
                 // チームに応じた色設定
@@ -2311,14 +2311,14 @@
             // 新しいハイライト用レイヤーを作成
             highlightedEventLayer = L.layerGroup();
             
-            // 座標変換（RoboCup → Leaflet）
-            const startLng = (event.x1 + 52.5);  // RoboCup X → Leaflet lng
-            const startLat = (event.y1 + 34);    // RoboCup Y → Leaflet lat
+            // 座標変換（RoboCup -> Leaflet）
+            const startLng = (event.x1 + 52.5);  // RoboCup X -> Leaflet lng
+            const startLat = (event.y1 + 34);    // RoboCup Y -> Leaflet lat
             
             let endLng = null, endLat = null;
             if (event.x2 !== null && event.y2 !== null) {
-                endLng = (event.x2 + 52.5);  // RoboCup X → Leaflet lng
-                endLat = (event.y2 + 34);    // RoboCup Y → Leaflet lat
+                endLng = (event.x2 + 52.5);  // RoboCup X -> Leaflet lng
+                endLat = (event.y2 + 34);    // RoboCup Y -> Leaflet lat
             }
             
             // チームに応じた色設定
@@ -2448,7 +2448,7 @@
                 performSpatialFilter();
                 
             } catch (error) {
-                console.warn('図形の復元に失敗しました:', error);
+                console.warn('Failed to restore shapes:', error);
             }
         }
         
@@ -2457,7 +2457,7 @@
             let layer = null;
             
             if (type === 'circle') {
-                // 保存時の座標変換を逆変換: x → lng, y → lat
+                // 保存時の座標変換を逆変換: x -> lng, y -> lat
                 const center = L.latLng(data.center.y, data.center.x);
                 layer = L.circle(center, {
                     radius: data.radius,
@@ -2466,7 +2466,7 @@
                     opacity: 0.8,
                     fillOpacity: 0.3
                 });
-                console.log(`🔄 Circle restored: saved(x:${data.center.x}, y:${data.center.y}) → leaflet(lat:${data.center.y}, lng:${data.center.x}), radius:${data.radius}`);
+                console.log(`🔄 Circle restored: saved(x:${data.center.x}, y:${data.center.y}) -> leaflet(lat:${data.center.y}, lng:${data.center.x}), radius:${data.radius}`);
             } else if (type === 'rectangle') {
                 const bounds = L.latLngBounds(
                     L.latLng(data.bounds.south, data.bounds.west),
@@ -2479,7 +2479,7 @@
                     fillOpacity: 0.3
                 });
             } else if (type === 'polygon') {
-                // 保存時の座標変換を逆変換: x → lng, y → lat
+                // 保存時の座標変換を逆変換: x -> lng, y -> lat
                 const latlngs = data.coordinates.map(coord => L.latLng(coord.y, coord.x));
                 layer = L.polygon(latlngs, {
                     color: '#ff6b35',
@@ -2522,19 +2522,19 @@
             
             // 入力値の検証
             if (isNaN(xmin) || isNaN(ymin) || isNaN(xmax) || isNaN(ymax)) {
-                alert('すべての座標値を入力してください。');
+                alert('Please enter all coordinate values.');
                 return;
             }
             
             // 範囲の妥当性をチェック
             if (xmin >= xmax || ymin >= ymax) {
-                alert('座標範囲が無効です。Min値はMax値より小さくしてください。');
+                alert('Invalid coordinate range. Min values must be smaller than max values.');
                 return;
             }
             
             // フィールド範囲内かチェック
             if (xmin < -52.5 || xmax > 52.5 || ymin < -34 || ymax > 34) {
-                alert('座標値がフィールド範囲外です。X: -52.5~52.5, Y: -34~34の範囲で入力してください。');
+                alert('Coordinate values are outside the field range. Enter X within -52.5 to 52.5 and Y within -34 to 34.');
                 return;
             }
             
@@ -2542,7 +2542,7 @@
             drawnItems.clearLayers();
             
             // RoboCup座標系からLeaflet座標系に変換
-            // RoboCup: X(-52.5~52.5), Y(-34~34) → Leaflet: lng(0~105), lat(0~68)
+            // RoboCup: X(-52.5~52.5), Y(-34~34) -> Leaflet: lng(0~105), lat(0~68)
             const leafletBounds = L.latLngBounds(
                 [ymin + 34, xmin + 52.5], // southwest corner (lat, lng)
                 [ymax + 34, xmax + 52.5]  // northeast corner (lat, lng)
@@ -2571,7 +2571,7 @@
             // 選択状態表示を更新
             updateShapeSelectedIndicator(rectangle);
             
-            console.log(`📐 Coordinate search applied: RoboCup(${xmin},${ymin})-(${xmax},${ymax}) → Leaflet bounds: ${leafletBounds.toString()}`);
+            console.log(`📐 Coordinate search applied: RoboCup(${xmin},${ymin})-(${xmax},${ymax}) -> Leaflet bounds: ${leafletBounds.toString()}`);
             
             // フォームを自動送信して検索を実行
             document.getElementById('filterForm').submit();
@@ -2842,7 +2842,7 @@
                         const team = selectedEvent.side1;
                         const duration = sequence.length > 1 ? 
                             (sequence[sequence.length - 1].time1 - sequence[0].time1).toFixed(1) : '0.0';
-                        infoPanel.innerHTML = `🔗 Frontend extracted: ${sequence.length} events from ${team} team (${duration}s) <span style="color: #666; font-size: 0.8em;">[EventSequence未作成]</span>`;
+                        infoPanel.innerHTML = `🔗 Frontend extracted: ${sequence.length} events from ${team} team (${duration}s) <span style="color: #666; font-size: 0.8em;">[EventSequence not built]</span>`;
                         
                     } else {
                         console.log(`✅ EventSequence found from database:`);
@@ -2955,16 +2955,16 @@
             currentSequenceIds = sequence.map(event => event.id);
             
             sequence.forEach((event, index) => {
-                // 座標変換（RoboCup → Leaflet）
+                // 座標変換（RoboCup -> Leaflet）
                 // RoboCup: x1=東西(-52.5~52.5), y1=南北(-34~34)
                 // Leaflet: lng=東西(0~105), lat=南北(0~68)
-                const startLng = (event.x1 + 52.5);  // RoboCup X → Leaflet lng
-                const startLat = (event.y1 + 34);    // RoboCup Y → Leaflet lat
+                const startLng = (event.x1 + 52.5);  // RoboCup X -> Leaflet lng
+                const startLat = (event.y1 + 34);    // RoboCup Y -> Leaflet lat
                 
                 let endLng = null, endLat = null;
                 if (event.x2 !== null && event.y2 !== null) {
-                    endLng = (event.x2 + 52.5);  // RoboCup X → Leaflet lng
-                    endLat = (event.y2 + 34);    // RoboCup Y → Leaflet lat
+                    endLng = (event.x2 + 52.5);  // RoboCup X -> Leaflet lng
+                    endLat = (event.y2 + 34);    // RoboCup Y -> Leaflet lat
                 }
                 
                 // チームに応じた色設定
@@ -3053,7 +3053,7 @@
         // シーケンスフィルタを適用
         function applySequenceFilter() {
             if (!currentSequenceIds || currentSequenceIds.length === 0) {
-                alert('シーケンスが選択されていません');
+                alert('No sequence is selected.');
                 return;
             }
             
