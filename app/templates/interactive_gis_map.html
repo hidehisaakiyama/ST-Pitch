@@ -1028,46 +1028,31 @@
         const originalEvents = [
         {% if events %}
             {% for event in events %}
-            {
-                id: {{ event.id }},
-                match_id: "{{ event.match_id }}",
-                time1: {{ event.time1 if event.time1 is not none else 'null' }},
-                time2: {{ event.time2 if event.time2 is not none else 'null' }},
-                type: "{{ event.type }}",
-                side1: "{{ event.side1 }}",
-                side2: "{{ event.side2 if event.side2 else '' }}",
-                unum1: {{ event.unum1 if event.unum1 is not none else 'null' }},
-                unum2: {{ event.unum2 if event.unum2 is not none else 'null' }},
-                x1: {{ event.x1 if event.x1 is not none else 'null' }},
-                y1: {{ event.y1 if event.y1 is not none else 'null' }},
-                x2: {{ event.x2 if event.x2 is not none else 'null' }},
-                y2: {{ event.y2 if event.y2 is not none else 'null' }},
-                mode1: "{{ event.mode1 if event.mode1 else '' }}",
-                success: {{ 'true' if event.success else 'false' }}
-            }{% if not loop.last %},{% endif %}
+            {{
+                {
+                    "id": event.id,
+                    "match_id": event.match_id,
+                    "time1": (event.time1 if (event.time1 is not none and event.time1 == event.time1) else none),
+                    "time2": (event.time2 if (event.time2 is not none and event.time2 == event.time2) else none),
+                    "type": event.type,
+                    "side1": event.side1,
+                    "side2": (event.side2 if event.side2 else ""),
+                    "unum1": event.unum1,
+                    "unum2": event.unum2,
+                    "x1": (event.x1 if (event.x1 is not none and event.x1 == event.x1) else none),
+                    "y1": (event.y1 if (event.y1 is not none and event.y1 == event.y1) else none),
+                    "x2": (event.x2 if (event.x2 is not none and event.x2 == event.x2) else none),
+                    "y2": (event.y2 if (event.y2 is not none and event.y2 == event.y2) else none),
+                    "mode1": (event.mode1 if event.mode1 else ""),
+                    "success": (event.success if event.success is not none else none)
+                } | tojson
+            }}{% if not loop.last %},{% endif %}
             {% endfor %}
         {% endif %}
         ];
         
         // EventSequenceデータ（GIS情報付き）をJavaScriptに渡す
-        const eventSequences = [
-        {% if sequences %}
-            {% for seq in sequences %}
-            {
-                id: {{ seq.id }},
-                team: "{{ seq.team }}",
-                sequence_number: {{ seq.sequence_number }},
-                start_time: {{ seq.start_time }},
-                end_time: {{ seq.end_time }},
-                event_count: {{ seq.event_count }},
-                trajectory_wkt: {{ '"' + seq.trajectory_wkt + '"' if seq.trajectory_wkt else 'null' }},
-                start_point_wkt: {{ '"' + seq.start_point_wkt + '"' if seq.start_point_wkt else 'null' }},
-                end_point_wkt: {{ '"' + seq.end_point_wkt + '"' if seq.end_point_wkt else 'null' }},
-                coverage_area_wkt: {{ '"' + seq.coverage_area_wkt + '"' if seq.coverage_area_wkt else 'null' }}
-            }{% if not loop.last %},{% endif %}
-            {% endfor %}
-        {% endif %}
-        ];
+        const eventSequences = {{ (sequences or []) | tojson }};
         
         console.log(`Loaded ${originalEvents.length} events and ${eventSequences.length} sequences for GIS display`);
         
@@ -1534,8 +1519,8 @@
                 // RoboCup座標からマップ座標に変換
                 // RoboCup: x1=東西(-52.5~52.5), y1=南北(-34~34)
                 // Leaflet: lng=東西(0~105), lat=南北(0~68)
-                const eventLng = event.x1 + 52.5;  // RoboCup X &rarr; Leaflet lng
-                const eventLat = event.y1 + 34;    // RoboCup Y &rarr; Leaflet lat
+                const eventLng = event.x1 + 52.5;  // RoboCup X -> Leaflet lng
+                const eventLat = event.y1 + 34;    // RoboCup Y -> Leaflet lat
                 const eventLatLng = L.latLng(eventLat, eventLng);
                 
                 // 座標変換のデバッグ（最初の3個のイベント）
@@ -2014,7 +1999,10 @@
             
             // フィルタリングされたイベントを使用（空間検索が有効な場合はfilteredEvents、そうでなければoriginalEvents）
             let eventsToShow = spatialSearchActive ? filteredEvents : originalEvents;
-            
+
+            // nullやundefinedの座標を持つイベントを除外
+            eventsToShow = eventsToShow.filter(e => Number.isFinite(e.x1) && Number.isFinite(e.y1));
+
             // Display Limitを適用
             if (eventsToShow.length > displayLimit) {
                 eventsToShow = eventsToShow.slice(0, displayLimit);
