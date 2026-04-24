@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ tournament.name }} - 試合一括追加</title>
+    <title>{{ tournament.name }} - Bulk Add Matches</title>
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
 </head>
 <body>
@@ -25,17 +25,17 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header bg-success text-white">
-                    <h1 class="mb-0">📦 {{ tournament.name }} - 試合一括追加</h1>
+                    <h1 class="mb-0">📦 {{ tournament.name }} - Bulk Add Matches</h1>
                 </div>
                 <div class="card-body">
                     <div class="row">
                         <div class="col-md-6">
-                            <p class="mb-1"><strong>📅 年:</strong> {{ tournament.year }}</p>
-                            <p class="mb-1"><strong>📆 期間:</strong> {{ tournament.start_date.strftime('%Y-%m-%d') }} 〜 {{ tournament.end_date.strftime('%Y-%m-%d') }}</p>
+                            <p class="mb-1"><strong>📅 Year:</strong> {{ tournament.year }}</p>
+                            <p class="mb-1"><strong>📆 Period:</strong> {{ tournament.start_date.strftime('%Y-%m-%d') }} to {{ tournament.end_date.strftime('%Y-%m-%d') }}</p>
                         </div>
                         <div class="col-md-6">
-                            <p class="mb-1"><strong>🎯 現在の登録試合数:</strong> {{ registered_count }} 試合</p>
-                            <p class="mb-0"><strong>🆕 追加可能な試合:</strong> {{ unregistered_matches|length }} 試合</p>
+                            <p class="mb-1"><strong>🎯 Current Registered Matches:</strong> {{ registered_count }} matches</p>
+                            <p class="mb-0"><strong>🆕 Available Matches:</strong> {{ unregistered_matches|length }} matches</p>
                         </div>
                     </div>
                 </div>
@@ -47,7 +47,7 @@
     <div class="row mb-3">
         <div class="col-md-12">
             <a href="{{ url_for('main.view_tournament', tournament_id=tournament.id) }}" class="btn btn-secondary">
-                ← 大会詳細に戻る
+                &larr; Back to Tournament Details
             </a>
         </div>
     </div>
@@ -58,10 +58,10 @@
         <div class="row mb-3">
             <div class="col-md-12 text-center">
                 <button type="submit" class="btn btn-success btn-lg">
-                    📦 選択した試合を一括追加
+                    📦 Bulk Add Selected Matches
                 </button>
                 <p class="text-muted mt-2 mb-0">
-                    <small>下の一覧から試合を選択して、上のボタンで一括追加してください</small>
+                    <small>Please select matches from the list below and bulk add them using the button above</small>
                 </p>
             </div>
         </div>
@@ -72,10 +72,10 @@
                 <div class="card">
                     <div class="card-header">
                         <div class="d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">🏆 追加可能な試合一覧</h5>
+                            <h5 class="mb-0">🏆 Available Matches List</h5>
                             <div>
-                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selectAll()">全選択</button>
-                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selectNone()">全解除</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selectAll()">Select All</button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="selectNone()">Deselect All</button>
                             </div>
                         </div>
                     </div>
@@ -88,7 +88,7 @@
                                     <label class="form-check-label w-100" for="match_{{ loop.index }}">
                                         <div class="d-flex justify-content-between">
                                             <strong>{{ match.display_name }}</strong>
-                                            <span class="badge bg-info">{{ match.event_count }} イベント</span>
+                                            <span class="badge bg-info">{{ match.event_count }} events</span>
                                         </div>
                                         <small class="text-muted">
                                             📅 {{ match.date_time }}<br>
@@ -109,10 +109,10 @@
     <div class="row">
         <div class="col-md-12">
             <div class="alert alert-info text-center">
-                <h4>📭 追加可能な試合がありません</h4>
-                <p>全ての利用可能な試合が既にこの大会に登録されているか、CSVデータがアップロードされていません。</p>
+                <h4>📭 No Available Matches</h4>
+                <p>All available matches are already registered to this tournament, or no CSV data has been uploaded.</p>
                 <a href="{{ url_for('main.upload_event_csv') }}" class="btn btn-outline-primary">
-                    📤 CSVデータをアップロード
+                    📤 Upload CSV Data
                 </a>
             </div>
         </div>

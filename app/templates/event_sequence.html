@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>連続イベント検索結果</title>
+  <title>Event Sequence Search Results</title>
   <style>
     body {
       font-family: sans-serif;
@@ -36,18 +36,18 @@
 </head>
 <body>
 
-  <h1>チーム「{{ team }}」の連続イベント検索結果</h1>
+  <h1>Event Sequence Search Results for Team "{{ team }}"</h1>
   
   {% if processing_time %}
   <div style="background-color: #e8f5e8; padding: 8px; margin-bottom: 15px; border-radius: 4px; font-size: 0.9em;">
-    ⚡ 処理時間: {{ processing_time }}秒
+    ⚡ Processing Time: {{ processing_time }} seconds
     {% if fallback_mode %}
     <span style="color: #666; margin-left: 10px;">
-      ⚠️ フォールバックモード（EventSequenceテーブル未作成のため動的生成）
+      ⚠️ Fallback Mode (Dynamic Generation Due to Uncreated EventSequence Table)
     </span>
     {% else %}
     <span style="color: #0066cc; margin-left: 10px;">
-      📊 EventSequenceテーブル活用版
+      📊 EventSequence Table Utilization Version
     </span>
     {% endif %}
   </div>
@@ -56,16 +56,16 @@
   {% if sequences %}
     {% for seq in sequences %}
       <div class="sequence">
-        <h3>イベントシーケンス（{{ seq|length }} 件）</h3>
+        <h3>Event Sequence ({{ seq|length }} items)</h3>
         <ul>
           {% for e in seq %}
             <li>
-              {{ e.time1 }}秒：
-              {{ e.type }}、
-              Side1: {{ e.side1 }}, Unum1: {{ e.unum1 }}、
-              座標1: ({{ e.x1 }}, {{ e.y1 }}) →
-              Side2: {{ e.side2 }}, Unum2: {{ e.unum2 }}、
-              座標2: ({{ e.x2 }}, {{ e.y2 }})（{{ e.time2 }}秒）、
+              {{ e.time1 }} seconds:
+              {{ e.type }},
+              Side1: {{ e.side1 }}, Unum1: {{ e.unum1 }},
+              Coordinates 1: ({{ e.x1 }}, {{ e.y1 }}) &rarr;
+              Side2: {{ e.side2 }}, Unum2: {{ e.unum2 }},
+              Coordinates 2: ({{ e.x2 }}, {{ e.y2 }}) ({{ e.time2 }} seconds),
               Mode1: {{ e.mode1 }}
             </li>
           {% endfor %}
@@ -76,10 +76,10 @@
       </div>
     {% endfor %}
   {% else %}
-    <p>該当する連続イベントが見つかりませんでした。</p>
+    <p>No matching event sequences were found.</p>
   {% endif %}
 
-  <a class="back-link" href="{{ url_for('main.index') }}">← 戻る</a>
+  <a class="back-link" href="{{ url_for('main.index') }}">&larr; Back</a>
 
 <script>
   document.querySelectorAll('.field-canvas').forEach(canvas => {

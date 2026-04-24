@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>大会追加 - ChronoPitch</title>
+    <title>Add Tournament - ST-Pitch</title>
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
 </head>
 <body>
@@ -12,39 +12,39 @@
             <div class="col-md-6">
                 <div class="card">
                     <div class="card-header">
-                        <h3 class="card-title mb-0">🏆 大会追加</h3>
+                        <h3 class="card-title mb-0">🏆 Add Tournament</h3>
                     </div>
                     <div class="card-body">
                         <form action="{{ url_for('main.add_tournament') }}" method="post">
                             <div class="mb-3">
-                                <label for="name" class="form-label">大会名</label>
-                                <input type="text" class="form-control" id="name" name="name" required placeholder="例: ロボカップ2024">
+                                <label for="name" class="form-label">Tournament Name</label>
+                                <input type="text" class="form-control" id="name" name="name" required placeholder="e.g.: RoboCup 2024">
                             </div>
                             
                             <div class="mb-3">
-                                <label for="year" class="form-label">開催年</label>
+                                <label for="year" class="form-label">Year</label>
                                 <input type="number" class="form-control" id="year" name="year" required min="2020" max="2030" value="2024">
                             </div>
                             
                             <div class="mb-3">
-                                <label for="start_date" class="form-label">開始日</label>
+                                <label for="start_date" class="form-label">Start Date</label>
                                 <input type="date" class="form-control" id="start_date" name="start_date" required>
                             </div>
                             
                             <div class="mb-3">
-                                <label for="end_date" class="form-label">終了日</label>
+                                <label for="end_date" class="form-label">End Date</label>
                                 <input type="date" class="form-control" id="end_date" name="end_date" required>
                             </div>
                             
                             <div class="d-grid gap-2">
-                                <button type="submit" class="btn btn-primary">✅ 大会を登録</button>
+                                <button type="submit" class="btn btn-primary">✅ Register Tournament</button>
                             </div>
                         </form>
                     </div>
                 </div>
                 
                 <div class="text-center mt-3">
-                    <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">🏠 ホームに戻る</a>
+                    <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary">🏠 Back to Home</a>
                 </div>
             </div>
         </div>
