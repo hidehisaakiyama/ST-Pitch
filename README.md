@@ -17,7 +17,7 @@ The tools are designed to facilitate in-depth analysis of soccer matches, enabli
 - **Web Framework**: Flask for building the web application.
 - **Visualization**: Leaflet.js for interactive maps and data visualization.
 
-## Installation and Usage
+## Installation
 
 The following steps are based on Ubuntu Linux 24.04 LTS. Please adjust the commands accordingly for other environments.
 
@@ -73,17 +73,23 @@ The following steps are based on Ubuntu Linux 24.04 LTS. Please adjust the comma
    
    The `.env` file is automatically loaded when the application starts and is excluded from version control for security reasons.
 
-2. Run the Flask application.
+1. Run the Flask application.
    ```bash
    ./run.sh
    ```
-3. Access the web application by navigating to `http://localhost:5000` in your web browser.
+1. Access the web application by navigating to `http://localhost:5000` in your web browser.
 
-### Note
-
+**Note**:
 - Ensure that you have the necessary permissions and configurations for the PostgreSQL database and PostGIS extension to run the application successfully.
 - The name of the database, user, and password used in the example above are placeholders. Please replace them with your actual database credentials.
 - If you are deploying the application on a public server, consider using a WSGI server such as uWSGI or Gunicorn to serve the Flask application. Additionally, using a reverse proxy server like Nginx can enhance security and performance. 
+
+## Usage 
+
+The top page of the web interface provides options for managing tournaments/groups and uploading event CSV files. 
+
+
+
 
 ## Contributing
 
